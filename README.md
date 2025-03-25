@@ -18,9 +18,9 @@ from datetime import datetime
 from glootil import DynEnum, Toolbox
 
 tb = Toolbox(
-    "finances",
-    "Finances",
-    "Provides tools to do financial calculations",
+    "glootil-examples",
+    "Glootil Examples",
+    "Example tools from glootils",
 )
 
 
@@ -39,8 +39,6 @@ tb = Toolbox(
 def compound_interest_calculator(
     principal: float = 1.0, interest_rate: float = 3.0, years: int = 5
 ):
-    cols = [("year", "Year"), ("amount", "$")]
-    val_cols = ["amount"]
     year = datetime.now().year
     amount = principal
     rows = []
@@ -55,8 +53,8 @@ def compound_interest_calculator(
         "xColTitle": "Year",
         "yColTitle": "$",
         "xCol": "year",
-        "valCols": val_cols,
-        "cols": cols,
+        "valCols": ["amount"],
+        "cols": [("year", "Year"), ("amount", "$")],
         "rows": rows,
     }
 
