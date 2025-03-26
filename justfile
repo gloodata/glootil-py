@@ -4,3 +4,10 @@ test:
 
 format:
     ruff format
+
+dist:
+    rm -rf dist
+    uv build
+
+publish: dist
+    uv publish
