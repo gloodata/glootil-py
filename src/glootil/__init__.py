@@ -1,9 +1,12 @@
 import asyncio
 import inspect
+import logging
 import typing
+from datetime import date
 from difflib import SequenceMatcher
 from enum import Enum
-from datetime import date
+
+logger = logging.getLogger("glootil")
 
 UnionType = type(str | None)
 NoneType = type(None)
@@ -67,7 +70,7 @@ def try_cast_or(v, cast_fn, default, default_caster=identity):
     try:
         return cast_fn(v)
     except Exception as err:
-        print("couldn't cast to", cast_fn, "returning default", err)
+        logger.warning("couldn't cast returning default: %s", err)
         return default_caster(default)
 
 
@@ -77,8 +80,8 @@ def cast_json_type_to_fn_arg_type_or_default(v, target_type, default):
     if caster:
         return caster(v, default)
     else:
-        print(
-            "WARN: no caster found from", v_type, "to", target_type, "returning default"
+        logger.warning(
+            "no caster found from %s to %s, returning default", v_type, target_type
         )
         return default
 
@@ -165,7 +168,7 @@ def type_to_schema_type(t, default):
         return "integer", default if default is not None else 0
     else:
         if not (isinstance(t, type) and issubclass(t, (Enum, DynEnum))):
-            print("unknown type for schema", t, default)
+            logger.warning("unknown type for schema %s, returning string", t)
         return "string", ""
 
 
@@ -265,17 +268,7 @@ class Tool(FnInfo):
         if args:
             args_by_name = {arg.name: arg for arg in self.args}
             for name, info in args.items():
-                arg = args_by_name.get(name)
-                if arg:
-                    if isinstance(info, dict):
-                        arg.apply_overrides(info)
-                    elif isinstance(info, str):
-                        arg.apply_overrides({"name": info})
-                    else:
-                        print("bad tool argument info format for argument", name, info)
-
-                else:
-                    print("tool argument info for inexistent argument name", name)
+                apply_arg_override(args_by_name, name, info)
 
         if examples:
             self.examples = examples
@@ -284,6 +277,22 @@ class Tool(FnInfo):
             self.ui_prefix = ui_prefix
         elif self.ui_prefix == self.id:
             self.ui_prefix = self.name
+
+
+def apply_arg_override(args_by_name, name, info):
+    arg = args_by_name.get(name)
+    if arg:
+        if isinstance(info, dict):
+            arg.apply_overrides(info)
+        elif isinstance(info, str):
+            arg.apply_overrides({"name": info})
+        else:
+            logger.warning(
+                "bad tool argument info format for argument '%s': %s", name, info
+            )
+
+    else:
+        logger.warning("tool argument info for inexistent argument name '%s'", name)
 
 
 def basic_match_raw_tag_value(word, possibilities):
@@ -590,7 +599,7 @@ class Toolbox:
                     # NOTE: This call is async and returns an awaitable
                     return wrapper.from_raw_arg_value(v)
                 else:
-                    print("enum class argument type not annotated?", arg)
+                    logger.warning("enum class argument type not annotated? %s", arg)
                     return arg.default_value
             else:
                 return arg.cast_json_value_or_default(v)
@@ -605,7 +614,7 @@ class Toolbox:
     def add_enum(self, v):
         for id, handler in v.get_handlers():
             if id in self.handlers:
-                print(f"WARN: duplicated handler for id '{id}, new for enum {v}")
+                logger.warning("duplicated handler for id '%s', new from: %s", id, v.id)
 
             self.handlers[id] = handler
 
@@ -643,7 +652,7 @@ class Toolbox:
 
     def add_tool(self, tool):
         if tool.id in self.handlers:
-            print(f"WARN: duplicated handler for id '{id}, new for tool {tool}")
+            logger.warning("duplicated tool handler for '%s'", tool.id)
 
         arg_provider = self
         self.handlers[tool.id] = lambda info: tool.call_with_args(arg_provider, info)
@@ -712,13 +721,10 @@ class Toolbox:
         @app.post("/")
         async def root_gd_handler(request: Request):
             body = await request.json()
-            res = await maybe_await(tb.handle_request(body))
-            try:
-                return JSONResponse(content=jsonable_encoder(res), status_code=200)
-            except Exception as err:
-                print("Error encoding response", err, res)
-                err_res = res_error("InternalError", "Internal Error", {})
-                return JSONResponse(content=jsonable_encoder(err_res), status_code=500)
+            res = await maybe_await(
+                tb.handle_request(body), jsonable_encoder, JSONResponse
+            )
+            return handler_response_to_fastapi_response(res)
 
         return app
 
@@ -729,6 +735,15 @@ class Toolbox:
             asyncio.set_event_loop(loop)
         loop.run_until_complete(self.setup())
         serve_uvicorn(self.to_fastapi_app(), host, port)
+
+
+def handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse):
+    try:
+        return JSONResponse(content=jsonable_encoder(res), status_code=200)
+    except Exception as err:
+        logger.warning("Error encoding response: %s (%s)", err, res)
+        err_res = res_error("InternalError", "Internal Error", {})
+        return JSONResponse(content=jsonable_encoder(err_res), status_code=500)
 
 
 def res_error(code, reason, info=None):

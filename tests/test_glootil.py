@@ -7,9 +7,12 @@ from glootil import (
     FixedTagValue,
     FnArg,
     NoneType,
+    try_cast_or,
     type_to_schema_type,
     basic_match_raw_tag_value,
+    apply_arg_override,
     cast_json_type_to_fn_arg_type_or_default as cast_json,
+    handler_response_to_fastapi_response,
 )
 from datetime import date
 
@@ -794,3 +797,119 @@ def test_cast_json_from_str():
     assert cast_json("whatev", bool, False) is True
     assert cast_json("hi", str, "") == "hi"
     assert cast_json("2025-03-25", date, None) == date(2025, 3, 25)
+
+
+def test_try_cast_or_raise(caplog):
+    r = try_cast_or("a", int, 42)
+    assert r == 42
+    assert len(caplog.records) == 1
+    log = caplog.records[0]
+    assert log.levelname == "WARNING"
+
+
+def test_cast_json_log(caplog):
+    assert cast_json({}, int, None) is None
+    assert len(caplog.records) == 1
+    log = caplog.records[0]
+    assert log.levelname == "WARNING"
+    assert (
+        log.message
+        == "no caster found from <class 'dict'> to <class 'int'>, returning default"
+    )
+
+
+def test_type_to_schema_type_log(caplog):
+    t, d = type_to_schema_type(dict, None)
+    assert t == "string"
+    assert d == ""
+    assert len(caplog.records) == 1
+    log = caplog.records[0]
+    assert log.levelname == "WARNING"
+    assert log.message == "unknown type for schema <class 'dict'>, returning string"
+
+
+def test_apply_arg_override_not_found_log(caplog):
+    apply_arg_override({}, "foo", {})
+    assert len(caplog.records) == 1
+    log = caplog.records[0]
+    assert log.levelname == "WARNING"
+    assert log.message == "tool argument info for inexistent argument name 'foo'"
+
+
+def test_apply_arg_override_bad_info_type_log(caplog):
+    apply_arg_override({"foo": {"what": "dummy arg"}}, "foo", True)
+    assert len(caplog.records) == 1
+    log = caplog.records[0]
+    assert log.levelname == "WARNING"
+    assert log.message == "bad tool argument info format for argument 'foo': True"
+
+
+def test_provide_arg_not_annotated_log(caplog):
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    class MyEnum(Enum):
+        A = "a"
+        B = "b"
+
+    @tb.tool
+    def f(a: MyEnum = MyEnum.A):
+        return ""
+
+    arg = tb.tools[0].args[0]
+    r = tb.provide_arg(arg, {})
+    assert r == MyEnum.A
+
+    assert len(caplog.records) == 1
+    log = caplog.records[0]
+    assert log.levelname == "WARNING"
+    assert log.message == "enum class argument type not annotated? " + str(arg)
+
+
+def test_add_enums_same_id_log(caplog):
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    @tb.enum
+    class MyEnum(Enum):
+        A = "a"
+        B = "b"
+
+    assert len(caplog.records) == 1
+    log = caplog.records[0]
+    assert log.levelname == "WARNING"
+    assert (
+        log.message
+        == "duplicated handler for id 'enum::MyEnum::match', new from: MyEnum"
+    )
+
+
+def test_add_tools_same_id_log(caplog):
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.tool
+    @tb.tool
+    def f():
+        pass
+
+    assert len(caplog.records) == 1
+    log = caplog.records[0]
+    assert log.levelname == "WARNING"
+    assert log.message == "duplicated tool handler for 'f'"
+
+
+def test_response_log(caplog):
+    class JSONResponse:
+        def __init__(self, content=None, status_code=200):
+            self.content = content
+            self.status_code = status_code
+
+    def jsonable_encoder(v):
+        if v is None:
+            raise ValueError("Don't return null")
+        return v
+
+    handler_response_to_fastapi_response(None, jsonable_encoder, JSONResponse)
+
+    assert len(caplog.records) == 1
+    log = caplog.records[0]
+    assert log.levelname == "WARNING"
