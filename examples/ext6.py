@@ -1,19 +1,3 @@
-# Glootil
-
-A Python 3 library to create [gloodata](https://gloodata.com) extensions.
-
-## Usage
-
-```sh
-mkdir my-gd-ext
-cd my-gd-ext
-uv init
-uv add glootil uvicorn fastapi
-```
-
-edit `main.py` to contain:
-
-```python
 from datetime import datetime
 from enum import Enum
 
@@ -85,26 +69,3 @@ def compound_interest_calculator(
 
 
 tb.serve(host="127.0.0.1", port=8087)
-```
-
-Start:
-
-```sh
-uv run main.py
-```
-
-On gloodata write in the prompt bar:
-
-> Add extension Fincance at port 8087
-
-Click `Test` and then `Save`
-
-Now in the prompt bar write something like:
-
-> calculate compound interest for initial 2500 dollars, 3.5% interests for 15 years
-
-Check the [examples](https://github.com/gloodata/glootil-py/tree/main/examples) folder for more.
-
-## License
-
-MIT, see LICENSE file for details

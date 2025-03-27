@@ -14,6 +14,7 @@ from glootil import (
 from datetime import date
 
 import pytest
+import pytest_asyncio
 
 all_months = [
     ("01", "January"),
@@ -165,7 +166,7 @@ def test_enum_class():
     assert div.name == "DIV"
     assert div.value == "div"
 
-    assert e.to_info() == {
+    assert e.to_info(tb) == {
         "id": e.id,
         "name": e.name,
         "description": e.docs,
@@ -229,7 +230,7 @@ def test_tool_all_types():
 
     t = tb.tools[0]
 
-    assert t.to_info() == {
+    assert t.to_info(tb) == {
         "title": t.name,
         "description": t.docs,
         "schema": {
@@ -596,7 +597,7 @@ def test_dyn_enum_decoration_no_args():
     assert e.docs == "A Country"
     assert e.icon is None
 
-    assert e.to_info() == {
+    assert e.to_info(tb) == {
         "id": e.id,
         "name": e.name,
         "description": e.docs,
@@ -627,7 +628,7 @@ def test_dyn_enum_decoration_args():
     assert e.docs == "A Country"
     assert e.icon == "flag"
 
-    assert e.to_info() == {
+    assert e.to_info(tb) == {
         "id": e.id,
         "name": e.name,
         "description": e.docs,
