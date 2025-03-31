@@ -308,6 +308,27 @@ def sample_population_pyramid():
     }
 
 
+@tb.tool
+def sample_area_map():
+    return {
+        "type": "AreaMap",
+        "mapId": "world",
+        "colorMap": "jet",
+        "items": [
+            {"name": "AR", "value": 1},
+            {"name": "BR", "value": None},
+            {"name": "FR", "value": 2, "color": "orange"},
+            {"name": "IT", "value": 3},
+            {"name": "CA", "value": 5},
+            {"name": "MX", "value": 6},
+            {"name": "JP", "value": 7},
+            {"name": "CN", "value": 8},
+            {"name": "AU", "value": 9},
+            {"name": "NZ", "value": 10},
+        ],
+    }
+
+
 def now_ms_ts():
     return time.time() * 1000
 
