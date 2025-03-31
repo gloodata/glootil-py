@@ -721,10 +721,8 @@ class Toolbox:
         @app.post("/")
         async def root_gd_handler(request: Request):
             body = await request.json()
-            res = await maybe_await(
-                tb.handle_request(body), jsonable_encoder, JSONResponse
-            )
-            return handler_response_to_fastapi_response(res)
+            res = await maybe_await(tb.handle_request(body))
+            return handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse)
 
         return app
 
