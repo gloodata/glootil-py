@@ -1,4 +1,5 @@
 import sys
+import time
 
 sys.path.append("../src")
 
@@ -12,10 +13,124 @@ tb = Toolbox(
 
 
 @tb.tool
+def sample_raw_markdown():
+    return "# Hello\n *this* **is** markdown\n\n- one\n- two"
+
+
+DIAGRAM = """sequenceDiagram
+    actor User
+    box Gloodata
+        participant Gloodata as 🟣 Gloodata
+        participant LLM as 🤖 LLM
+    end
+
+    box Extension
+        participant Extension as ⚙️ Extension(s)
+        participant DataSource as ☁️ Data Source(s)
+    end
+
+    Note over DataSource: APIs / Services / Files<br>Databases / Data Lake
+    User->>+Gloodata: Natural Language Query
+    Gloodata->>+Gloodata: List Extensions' Components
+    Gloodata->>+LLM: Components + Query
+    LLM->>-Gloodata: Configured Component(s)
+    loop For Each Component
+        Gloodata->>+Extension: Instantiate Component
+        Extension->>+DataSource: Load Data
+        DataSource->>-Extension: Data
+        Extension->>-Gloodata: Component Information
+        Gloodata->>+User: Component UI
+    end
+"""
+
+
+@tb.tool
+def sample_mermaid_diagram():
+    return {"type": "Mermaid", "text": DIAGRAM}
+
+
+@tb.tool
+def sample_infobox():
+    return {
+        "type": "InfoBox",
+        "columns": [
+            "Number",
+            ["string", "String"],
+            {"id": "bool", "label": "Bool"},
+            "Null Value",
+            "Date",
+            "Date Time",
+            "Link",
+            "Phone",
+            "Mail",
+        ],
+        "row": [
+            42,
+            "hello",
+            True,
+            None,
+            ["date", {"ts": now_ms_ts()}],
+            ["datetime", {"ts": now_ms_ts()}],
+            ["link", {"url": "https://gloodata.com", "label": "Gloodata"}],
+            ["phone", {"v": "555 1234 5678"}],
+            ["mail", {"v": "alice@example.com"}],
+        ],
+    }
+
+
+@tb.tool
+def sample_table():
+    return {
+        "type": "Table",
+        "columns": [
+            "Number",
+            ["string", "String"],
+            {"id": "bool", "label": "Bool"},
+            "Null Value",
+            "Date",
+            "Date Time",
+            "Link",
+            "Phone",
+            "Mail",
+        ],
+        "rows": [
+            [
+                42,
+                "hello",
+                True,
+                None,
+                ["date", {"ts": now_ms_ts()}],
+                ["datetime", {"ts": now_ms_ts()}],
+                ["link", {"url": "https://gloodata.com", "label": "Gloodata"}],
+                ["phone", {"v": "555 1234 5678"}],
+                ["mail", {"v": "alice@example.com"}],
+            ],
+            [
+                43,
+                "bye",
+                False,
+                None,
+                ["date", {"ts": now_ms_ts()}],
+                ["datetime", {"ts": now_ms_ts()}],
+                [
+                    "link",
+                    {
+                        "url": "https://gloodata.com/download",
+                        "label": "Download Gloodata",
+                    },
+                ],
+                ["phone", {"v": "555 5678 1234 "}],
+                ["mail", {"v": "bob@example.com"}],
+            ],
+        ],
+    }
+
+
+@tb.tool
 def sample_google_map():
     return {
         "type": "GoogleMap",
-        "center": [41,29],
+        "center": [41, 29],
         "zoom": 12,
         # https://developers.google.com/maps/documentation/javascript/reference/advanced-markers#PinElementOptions
         "pins": {
@@ -172,5 +287,29 @@ def sample_google_map():
             },
         ],
     }
+
+
+@tb.tool
+def sample_population_pyramid():
+    return {
+        "type": "PopulationPyramid",
+        "items": [
+            {"label": "90-100", "start": 10, "end": 12, "startLabel": "ten!"},
+            {"label": "80-90", "start": 230, "end": 251, "endLabel": "hi!"},
+            {"label": "70-80", "start": 330, "end": 361, "endSize": 50},
+            {"label": "60-70", "start": 430, "end": 471, "startSize": 50},
+            {"label": "50-60", "start": 530, "end": 551},
+            {"label": "40-50", "start": 630, "end": 661},
+            {"label": "30-40", "start": 730, "end": 781},
+            {"label": "20-30", "start": 830, "end": 851},
+            {"label": "10-20", "start": 930, "end": 991},
+            {"label": "0-10", "start": 1030, "end": 1021},
+        ],
+    }
+
+
+def now_ms_ts():
+    return time.time() * 1000
+
 
 tb.serve("127.0.0.1", 8088)
