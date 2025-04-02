@@ -223,6 +223,16 @@ class FnInfo:
 
         return cls(fn, fn_name, docs, args, return_type)
 
+    def apply_overrides(self, d):
+        name = d.get("name")
+        docs = d.get("docs")
+
+        if name:
+            self.name = name
+
+        if docs:
+            self.docs = docs
+
 
 class Tool(FnInfo):
     def __init__(self, fn, name, docs, args, return_type=None, examples=None):
@@ -230,6 +240,10 @@ class Tool(FnInfo):
         self.id = name
         self.examples = examples if examples is not None else []
         self.ui_prefix = name
+
+    @property
+    def handler_id(self):
+        return self.id
 
     @classmethod
     def make_arg(cls, name, i, arg_type, arg_default):
@@ -277,6 +291,12 @@ class Tool(FnInfo):
             self.ui_prefix = ui_prefix
         elif self.ui_prefix == self.id:
             self.ui_prefix = self.name
+
+
+class Task(FnInfo):
+    @property
+    def handler_id(self):
+        return f"task::{self.name}"
 
 
 def apply_arg_override(args_by_name, name, info):
@@ -572,6 +592,8 @@ class Toolbox:
         self.docs = docs
 
         self.tools = []
+        self.tasks = []
+        self._raw_task_to_task = {}
         self.enums = []
         self.enum_class_to_wrapper = {}
 
@@ -611,15 +633,37 @@ class Toolbox:
             else:
                 self.state.setup()
 
+    def handler_id_for_task(self, fn):
+        task = self._raw_task_to_task.get(fn)
+        if task:
+            return task.handler_id
+        else:
+            raise ValueError("Handler id not found for Task")
+
+    def add_handler(self, id, handler):
+        if id in self.handlers:
+            logger.warning("duplicated handler for id '%s'", id)
+
+        self.handlers[id] = handler
+
     def add_enum(self, v):
         for id, handler in v.get_handlers():
-            if id in self.handlers:
-                logger.warning("duplicated handler for id '%s', new from: %s", id, v.id)
-
-            self.handlers[id] = handler
+            self.add_handler(id, handler)
 
         self.enum_class_to_wrapper[v.EnumClass] = v
         self.enums.append(v)
+
+    def add_tool(self, tool):
+        handler = lambda info: tool.call_with_args(self, info)
+        self.add_handler(tool.handler_id, handler)
+        self.tools.append(tool)
+
+    def add_task(self, v):
+        handler = lambda info: v.call_with_args(self, info)
+        self.add_handler(v.handler_id, handler)
+        self._raw_task_to_task[v.fn] = v
+
+        self.tasks.append(v)
 
     def enum(self, *args, **kwargs):
         if len(args) == 1 and len(kwargs) == 0:
@@ -650,14 +694,21 @@ class Toolbox:
 
             return wrapper
 
-    def add_tool(self, tool):
-        if tool.id in self.handlers:
-            logger.warning("duplicated tool handler for '%s'", tool.id)
+    def task(self, *args, **kwargs):
+        if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
+            func = args[0]
+            t = Task.from_function(func)
+            self.add_task(t)
+            return func
+        else:
 
-        arg_provider = self
-        self.handlers[tool.id] = lambda info: tool.call_with_args(arg_provider, info)
+            def wrapper(func):
+                t = Task.from_function(func)
+                t.apply_overrides(kwargs)
+                self.add_task(t)
+                return func
 
-        self.tools.append(tool)
+            return wrapper
 
     def tool(self, *args, **kwargs):
         if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
@@ -684,6 +735,7 @@ class Toolbox:
             "tagValues": {
                 tag_value.id: tag_value.to_info(self) for tag_value in self.enums
             },
+            "handlers": [task.handler_id for task in self.tasks],
         }
 
     def handle_request(self, body):
@@ -722,7 +774,9 @@ class Toolbox:
         async def root_gd_handler(request: Request):
             body = await request.json()
             res = await maybe_await(tb.handle_request(body))
-            return handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse)
+            return handler_response_to_fastapi_response(
+                res, jsonable_encoder, JSONResponse
+            )
 
         return app
 
@@ -755,7 +809,7 @@ def serve_uvicorn(app, host="127.0.0.1", port=8086):
 
 
 async def maybe_await(v):
-    if inspect.isawaitable(v):
-        return await v
-    else:
-        return v
+    r = v
+    while inspect.isawaitable(r):
+        r = await r
+    return r

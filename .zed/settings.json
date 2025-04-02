@@ -1,0 +1,21 @@
+{
+  "lsp": {
+    "pyright": {
+      "settings": {
+        "python.analysis": {
+          "diagnosticMode": "workspace",
+          "typeCheckingMode": "strict"
+        },
+        "python": {
+          "pythonPath": ".venv/bin/python"
+        }
+      }
+    }
+  },
+  "languages": {
+    "Python": {
+      // "language_servers": ["ruff"]
+      "language_servers": ["pyright", "ruff"]
+    }
+  }
+}

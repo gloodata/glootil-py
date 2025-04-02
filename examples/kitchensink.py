@@ -1,5 +1,8 @@
 import sys
 import time
+import asyncio
+import random
+
 
 sys.path.append("../src")
 
@@ -326,6 +329,40 @@ def sample_area_map():
             {"name": "AU", "value": 9},
             {"name": "NZ", "value": 10},
         ],
+    }
+
+
+@tb.task
+async def search_handler(query: str = ""):
+    await asyncio.sleep(random.uniform(1, 5))
+
+    return [
+        {"type": "Post", "body": f"Query: '{query}'"},
+        {
+            "type": "Post",
+            "format": "txt",
+            "title": "Plain text",
+            "body": "plain *text* **really**",
+        },
+        {
+            "type": "Post",
+            "format": "md",
+            "title": "Markdown",
+            "body": "some *markdown* **formatting**.",
+        },
+    ]
+
+
+SEARCH_HANDLER_ID = tb.handler_id_for_task(search_handler)
+
+
+@tb.tool
+def sample_search():
+    return {
+        "type": "Search",
+        "placeholder": "Search...",
+        "searchType": "submit",
+        "searchHandlerName": SEARCH_HANDLER_ID,
     }
 
 
