@@ -1,12 +1,24 @@
+import os
 import asyncio
 import inspect
 import logging
 import typing
+import mimetypes
 from datetime import date
 from difflib import SequenceMatcher
 from enum import Enum
 
+from typing import Optional, BinaryIO, Dict, Any
+
 logger = logging.getLogger("glootil")
+
+try:
+    import fastapi
+
+    fast_api_available = True
+except ImportError:
+    fast_api_available = False
+
 
 UnionType = type(str | None)
 NoneType = type(None)
@@ -763,22 +775,7 @@ class Toolbox:
             return res_error("ToolNotFound", "Tool Not Found", {"opName": op_name})
 
     def to_fastapi_app(self):
-        from fastapi import FastAPI, Request
-        from fastapi.encoders import jsonable_encoder
-        from fastapi.responses import JSONResponse
-
-        app = FastAPI()
-        tb = self
-
-        @app.post("/")
-        async def root_gd_handler(request: Request):
-            body = await request.json()
-            res = await maybe_await(tb.handle_request(body))
-            return handler_response_to_fastapi_response(
-                res, jsonable_encoder, JSONResponse
-            )
-
-        return app
+        return toolbox_to_fastapi(self)
 
     def serve(self, host="127.0.0.1", port=8086):
         loop = asyncio.get_event_loop()
@@ -787,15 +784,6 @@ class Toolbox:
             asyncio.set_event_loop(loop)
         loop.run_until_complete(self.setup())
         serve_uvicorn(self.to_fastapi_app(), host, port)
-
-
-def handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse):
-    try:
-        return JSONResponse(content=jsonable_encoder(res), status_code=200)
-    except Exception as err:
-        logger.warning("Error encoding response: %s (%s)", err, res)
-        err_res = res_error("InternalError", "Internal Error", {})
-        return JSONResponse(content=jsonable_encoder(err_res), status_code=500)
 
 
 def res_error(code, reason, info=None):
@@ -813,3 +801,101 @@ async def maybe_await(v):
     while inspect.isawaitable(r):
         r = await r
     return r
+
+
+## resource utils
+
+
+def send_bytes_range_requests(
+    file_obj: BinaryIO, start: int, end: int, chunk_size: int = 10_000
+):
+    with file_obj as f:
+        f.seek(start)
+        while (pos := f.tell()) <= end:
+            read_size = min(chunk_size, end + 1 - pos)
+            yield f.read(read_size)
+
+
+def get_mime_type(file_path):
+    mime_type, encoding = mimetypes.guess_type(file_path)
+
+    if mime_type is None:
+        mime_type = "application/octet-stream"
+
+    return mime_type
+
+
+# fastapi utils
+
+if fast_api_available:
+    from fastapi import FastAPI, Request
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.responses import (
+        JSONResponse,
+        Response,
+        FileResponse,
+        StreamingResponse,
+    )
+
+    def serve_static_file(file_path, request, range_info):
+        try:
+            file_size = os.path.getsize(file_path)
+        except FileNotFoundError:
+            return Response(status_code=404, content="File not found")
+
+        if range_info:
+            # Example range header: bytes=0-100
+            range_val = range_info.split("=")[-1]
+            start_str, end_str = range_val.split("-")
+
+            # Parse start and end bytes
+            start = int(start_str) if start_str else 0
+            end = int(end_str) if end_str else file_size - 1
+
+            # Ensure range values are valid
+            if start >= file_size or end >= file_size or start > end:
+                return Response(
+                    status_code=416, headers={"Content-Range": f"bytes */{file_size}"}
+                )
+
+            content_length = end - start + 1
+            content_range = f"bytes {start}-{end}/{file_size}"
+            content_type = get_mime_type(file_path)
+            headers = {
+                "Content-Type": content_type,
+                "Content-Length": str(content_length),
+                "Content-Range": content_range,
+                "Accept-Ranges": "bytes",
+            }
+
+            print("serving range", headers, file_path)
+
+            return StreamingResponse(
+                send_bytes_range_requests(open(file_path, mode="rb"), start, end),
+                status_code=206,
+                headers=headers,
+            )
+
+        # Serve the entire file if no range is specified
+        return FileResponse(file_path, headers={"Accept-Ranges": "bytes"})
+
+    def handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse):
+        try:
+            return JSONResponse(content=jsonable_encoder(res), status_code=200)
+        except Exception as err:
+            logger.warning("Error encoding response: %s (%s)", err, res)
+            err_res = res_error("InternalError", "Internal Error", {})
+            return JSONResponse(content=jsonable_encoder(err_res), status_code=500)
+
+    def toolbox_to_fastapi(tb):
+        app = FastAPI()
+
+        @app.post("/")
+        async def root_gd_handler(request: Request):
+            body = await request.json()
+            res = await maybe_await(tb.handle_request(body))
+            return handler_response_to_fastapi_response(
+                res, jsonable_encoder, JSONResponse
+            )
+
+        return app
