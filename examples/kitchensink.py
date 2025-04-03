@@ -372,18 +372,29 @@ def sample_search():
     }
 
 
-@tb.resource(for_type="code")
-def code_resource(state: State, request: Request, resource: ResourceInfo):
-    if resource.id == "kitchensink":
-        return serve_static_file("./kitchensink.py", request)
+SAMPLE_DOCUMENT_RESOURCE_TYPE = "sample-doc"
+
+
+@tb.tool
+def show_sample_document():
+    return {
+        "type": "Pdf",
+        "resource": {"type": SAMPLE_DOCUMENT_RESOURCE_TYPE, "id": "book", "page": 5},
+    }
+
+
+@tb.resource(for_type=SAMPLE_DOCUMENT_RESOURCE_TYPE)
+def pdf_resource(state: State, request: Request, resource: ResourceInfo):
+    if resource.id == "book":
+        return serve_static_file("./book.pdf", request)
     else:
         return None
 
 
-@tb.resource(for_type="pdf")
-def pdf_resource(state: State, request: Request, resource: ResourceInfo):
-    if resource.id == "book":
-        return serve_static_file("./book.pdf", request)
+@tb.resource(for_type="code")
+def code_resource(state: State, request: Request, resource: ResourceInfo):
+    if resource.id == "kitchensink":
+        return serve_static_file("./kitchensink.py", request)
     else:
         return None
 
