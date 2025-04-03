@@ -12,14 +12,6 @@ from typing import Optional, BinaryIO, Dict, Any
 
 logger = logging.getLogger("glootil")
 
-try:
-    import fastapi
-
-    fast_api_available = True
-except ImportError:
-    fast_api_available = False
-
-
 UnionType = type(str | None)
 NoneType = type(None)
 
@@ -309,6 +301,19 @@ class Task(FnInfo):
     @property
     def handler_id(self):
         return f"task::{self.name}"
+
+
+class ResourceHandler:
+    def __init__(self, fn, for_type):
+        self.fn = fn
+        self.for_type = for_type
+
+
+class ResourceInfo:
+    def __init__(self, type, id, info={}):
+        self.type = type
+        self.id = id
+        self.info = info
 
 
 def apply_arg_override(args_by_name, name, info):
@@ -605,6 +610,7 @@ class Toolbox:
 
         self.tools = []
         self.tasks = []
+        self.resource_handlers = {}
         self._raw_task_to_task = {}
         self.enums = []
         self.enum_class_to_wrapper = {}
@@ -677,6 +683,12 @@ class Toolbox:
 
         self.tasks.append(v)
 
+    def add_resource_handler_for_type(self, v, for_type):
+        if for_type in self.resource_handlers:
+            logger.warning("overriding resource handler for type: %s", for_type)
+
+        self.resource_handlers[for_type] = v
+
     def enum(self, *args, **kwargs):
         if len(args) == 1 and len(kwargs) == 0:
             arg = args[0]
@@ -738,6 +750,14 @@ class Toolbox:
 
             return wrapper
 
+    def resource(self, for_type):
+        def wrapper(fn):
+            t = ResourceHandler(fn, for_type)
+            self.add_resource_handler_for_type(t, for_type)
+            return fn
+
+        return wrapper
+
     def build_tool_info(self):
         return {
             "ns": self.id,
@@ -773,6 +793,14 @@ class Toolbox:
             return handler(req_info)
         else:
             return res_error("ToolNotFound", "Tool Not Found", {"opName": op_name})
+
+    def handle_resource_request(self, request, res_type, res_id):
+        resource_handler = self.resource_handlers.get(res_type)
+        if resource_handler:
+            resource = ResourceInfo(res_type, res_id)
+            return resource_handler.fn(self.state, request, resource)
+        else:
+            return Response(status_code=404, content="Resource not found")
 
     def to_fastapi_app(self):
         return toolbox_to_fastapi(self)
@@ -827,75 +855,86 @@ def get_mime_type(file_path):
 
 # fastapi utils
 
-if fast_api_available:
-    from fastapi import FastAPI, Request
-    from fastapi.encoders import jsonable_encoder
-    from fastapi.responses import (
-        JSONResponse,
-        Response,
-        FileResponse,
-        StreamingResponse,
-    )
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import (
+    JSONResponse,
+    Response,
+    FileResponse,
+    StreamingResponse,
+)
 
-    def serve_static_file(file_path, request, range_info):
-        try:
-            file_size = os.path.getsize(file_path)
-        except FileNotFoundError:
-            return Response(status_code=404, content="File not found")
 
-        if range_info:
-            # Example range header: bytes=0-100
-            range_val = range_info.split("=")[-1]
-            start_str, end_str = range_val.split("-")
+def serve_static_file(file_path, request):
+    try:
+        file_size = os.path.getsize(file_path)
+    except FileNotFoundError:
+        return Response(status_code=404, content="File not found")
 
-            # Parse start and end bytes
-            start = int(start_str) if start_str else 0
-            end = int(end_str) if end_str else file_size - 1
+    range_info = request.headers.get("Range")
 
-            # Ensure range values are valid
-            if start >= file_size or end >= file_size or start > end:
-                return Response(
-                    status_code=416, headers={"Content-Range": f"bytes */{file_size}"}
-                )
+    if range_info:
+        # Example range header: bytes=0-100
+        range_val = range_info.split("=")[-1]
+        start_str, end_str = range_val.split("-")
 
-            content_length = end - start + 1
-            content_range = f"bytes {start}-{end}/{file_size}"
-            content_type = get_mime_type(file_path)
-            headers = {
-                "Content-Type": content_type,
-                "Content-Length": str(content_length),
-                "Content-Range": content_range,
-                "Accept-Ranges": "bytes",
-            }
+        # Parse start and end bytes
+        start = int(start_str) if start_str else 0
+        end = int(end_str) if end_str else file_size - 1
 
-            print("serving range", headers, file_path)
-
-            return StreamingResponse(
-                send_bytes_range_requests(open(file_path, mode="rb"), start, end),
-                status_code=206,
-                headers=headers,
+        # Ensure range values are valid
+        if start >= file_size or end >= file_size or start > end:
+            return Response(
+                status_code=416, headers={"Content-Range": f"bytes */{file_size}"}
             )
 
-        # Serve the entire file if no range is specified
-        return FileResponse(file_path, headers={"Accept-Ranges": "bytes"})
+        content_length = end - start + 1
+        content_range = f"bytes {start}-{end}/{file_size}"
+        content_type = get_mime_type(file_path)
+        headers = {
+            "Content-Type": content_type,
+            "Content-Length": str(content_length),
+            "Content-Range": content_range,
+            "Accept-Ranges": "bytes",
+        }
 
-    def handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse):
-        try:
-            return JSONResponse(content=jsonable_encoder(res), status_code=200)
-        except Exception as err:
-            logger.warning("Error encoding response: %s (%s)", err, res)
-            err_res = res_error("InternalError", "Internal Error", {})
-            return JSONResponse(content=jsonable_encoder(err_res), status_code=500)
+        print("serving range", headers, file_path)
 
-    def toolbox_to_fastapi(tb):
-        app = FastAPI()
+        return StreamingResponse(
+            send_bytes_range_requests(open(file_path, mode="rb"), start, end),
+            status_code=206,
+            headers=headers,
+        )
 
-        @app.post("/")
-        async def root_gd_handler(request: Request):
-            body = await request.json()
-            res = await maybe_await(tb.handle_request(body))
-            return handler_response_to_fastapi_response(
-                res, jsonable_encoder, JSONResponse
-            )
+    # Serve the entire file if no range is specified
+    return FileResponse(file_path, headers={"Accept-Ranges": "bytes"})
 
-        return app
+
+def handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse):
+    try:
+        return JSONResponse(content=jsonable_encoder(res), status_code=200)
+    except Exception as err:
+        logger.warning("Error encoding response: %s (%s)", err, res)
+        err_res = res_error("InternalError", "Internal Error", {})
+        return JSONResponse(content=jsonable_encoder(err_res), status_code=500)
+
+
+def toolbox_to_fastapi(tb):
+    app = FastAPI()
+
+    @app.post("/")
+    async def root_gd_handler(request: Request):
+        body = await request.json()
+        res = await maybe_await(tb.handle_request(body))
+        return handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse)
+
+    @app.get("/resource/{res_type}/{res_id}")
+    async def resource_handler(request: Request, res_type: str, res_id: str):
+        print("handling resource", res_type, res_id)
+        res = tb.handle_resource_request(request, res_type, res_id)
+        if res is None:
+            return Response(status_code=404, content="Resource not found")
+        else:
+            return await maybe_await(res)
+
+    return app

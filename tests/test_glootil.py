@@ -188,7 +188,7 @@ def test_empty_build_tool_info():
         "description": "some tools",
         "tools": {},
         "tagValues": {},
-        "handlers": []
+        "handlers": [],
     }
 
 
@@ -340,7 +340,7 @@ def test_toolbox_info():
                 "loadEntriesHandlerId": "enum::CountryEnum::load_entries",
             }
         },
-        "handlers": []
+        "handlers": [],
     }
 
 
@@ -879,10 +879,7 @@ def test_add_enums_same_id_log(caplog):
     assert len(caplog.records) == 1
     log = caplog.records[0]
     assert log.levelname == "WARNING"
-    assert (
-        log.message
-        == "duplicated handler for id 'enum::MyEnum::match'"
-    )
+    assert log.message == "duplicated handler for id 'enum::MyEnum::match'"
 
 
 def test_add_tools_same_id_log(caplog):

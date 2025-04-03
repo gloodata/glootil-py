@@ -3,15 +3,21 @@ import time
 import asyncio
 import random
 
-
 sys.path.append("../src")
 
-from glootil import Toolbox
+from glootil import Toolbox, ResourceInfo, serve_static_file
+from fastapi import Request
+
+
+class State:
+    pass
+
 
 tb = Toolbox(
     "kitchensink",
     "Kitchen Sink Extension",
     "Examples covering as many capabilities as possible",
+    state=State(),
 )
 
 
@@ -364,6 +370,22 @@ def sample_search():
         "searchType": "submit",
         "searchHandlerName": SEARCH_HANDLER_ID,
     }
+
+
+@tb.resource(for_type="code")
+def code_resource(state: State, request: Request, resource: ResourceInfo):
+    if resource.id == "kitchensink":
+        return serve_static_file("./kitchensink.py", request)
+    else:
+        return None
+
+
+@tb.resource(for_type="pdf")
+def pdf_resource(state: State, request: Request, resource: ResourceInfo):
+    if resource.id == "book":
+        return serve_static_file("./book.pdf", request)
+    else:
+        return None
 
 
 def now_ms_ts():
