@@ -347,10 +347,15 @@ class ContextActionInfo:
         return cls(value)
 
 
-class ResourceHandler:
-    def __init__(self, fn, for_type):
-        self.fn = fn
+class ResourceHandler(FnInfo):
+    def __init__(self, fn, name, docs, args, return_type, for_type):
+        super().__init__(fn, name, docs, args, return_type)
         self.for_type = for_type
+
+    @classmethod
+    def from_function_and_type(cls, fn, for_type):
+        f = FnInfo.from_function(fn)
+        return cls(fn, f.name, f.docs, f.args, f.return_type, for_type)
 
 
 class ResourceInfo:
@@ -434,11 +439,11 @@ class DynEnum:
 
 
 class TagValue:
-    def __init__(self, id, name, docs, icon=None):
+    def __init__(self, id, name, docs, icon="list"):
         self.id = id
         self.name = name
         self.docs = docs
-        self.icon = None
+        self.icon = icon
         self.closest_matcher = basic_match_raw_tag_value
 
     def __str__(self):
@@ -708,18 +713,15 @@ class Toolbox:
         t = arg.type
         if t is self.State:
             return self.state
+        elif t is Request:
+            # only for resource handlers
+            return _provide_arg_of_type(info, "request", Request)
+        elif t is ResourceInfo:
+            # only for resource handlers
+            return _provide_arg_of_type(info, "resource", ResourceInfo)
         elif t is ContextActionInfo:
-            # this one is only for context_action handlers, it's the only case where it's provided
-            v = info.get("info")
-            if isinstance(v, ContextActionInfo):
-                return v
-            elif v is not None:
-                logger.warning(
-                    "requested ContextActionInfo arg but got another type %s, %s",
-                    v,
-                    info,
-                )
-            return None
+            # only for context_action handlers
+            return _provide_arg_of_type(info, "info", ContextActionInfo)
         else:
             v = info.get(arg.name)
             if is_any_enum(t):
@@ -869,7 +871,7 @@ class Toolbox:
 
     def resource(self, for_type):
         def wrapper(fn):
-            t = ResourceHandler(fn, for_type)
+            t = ResourceHandler.from_function_and_type(fn, for_type)
             self.add_resource_handler_for_type(t, for_type)
             return fn
 
@@ -932,7 +934,9 @@ class Toolbox:
         resource_handler = self.resource_handlers.get(res_type)
         if resource_handler:
             resource = ResourceInfo(res_type, res_id)
-            return resource_handler.fn(self.state, request, resource)
+            return resource_handler.call_with_args(
+                self, {"request": request, "resource": resource}
+            )
         else:
             return Response(status_code=404, content="Resource not found")
 
@@ -946,6 +950,20 @@ class Toolbox:
             asyncio.set_event_loop(loop)
         loop.run_until_complete(self.setup())
         serve_uvicorn(self.to_fastapi_app(), host, port)
+
+
+def _provide_arg_of_type(info, key, Class):
+    v = info.get(key)
+    if isinstance(v, Class):
+        return v
+    elif v is not None:
+        logger.warning(
+            "requested %s arg but got another type %s, %s",
+            Class,
+            v,
+            info,
+        )
+    return None
 
 
 def res_error(code, reason, info=None):

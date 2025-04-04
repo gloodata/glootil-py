@@ -385,7 +385,7 @@ def show_sample_document():
 
 
 @tb.resource(for_type=SAMPLE_DOCUMENT_RESOURCE_TYPE)
-def pdf_resource(state: State, request: Request, resource: ResourceInfo):
+def pdf_resource(request: Request, resource: ResourceInfo):
     if resource.id == "book":
         return serve_static_file("./book.pdf", request)
     else:

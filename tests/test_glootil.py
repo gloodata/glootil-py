@@ -3,6 +3,7 @@ from enum import Enum
 from glootil import (
     Toolbox,
     ContextActionInfo,
+    ResourceInfo,
     DynEnum,
     DynTagValue,
     FixedTagValue,
@@ -17,6 +18,7 @@ from glootil import (
     handler_response_to_fastapi_response,
 )
 from datetime import date
+from fastapi import Request
 
 import pytest
 import pytest_asyncio
@@ -604,7 +606,7 @@ def test_dyn_enum_decoration_no_args():
     assert e.id == "Country"
     assert e.name == "Country"
     assert e.docs == "A Country"
-    assert e.icon is None
+    assert e.icon == "list"
 
     assert e.to_info(tb) == {
         "id": e.id,
@@ -729,7 +731,7 @@ async def test_async_dyn_enum():
     assert isinstance(e, DynTagValue)
     assert e.name == "Month"
     assert e.docs == "my enum description"
-    assert e.icon is None
+    assert e.icon == "list"
     en = await e.get_variants()
     assert len(en) == len(all_months)
     assert en == all_months
@@ -1017,3 +1019,41 @@ async def test_context_action_info_provided():
     assert isinstance(s, MyState)
     assert isinstance(i, ContextActionInfo)
     assert i.value == req_value
+
+
+@pytest.mark.asyncio
+async def test_resource_info_provided():
+    class MyState:
+        pass
+
+    my_state = MyState()
+    tb = Toolbox("mytools", "My Tools", "some tools", state=my_state)
+
+    calls = []
+
+    @tb.resource(for_type="doc")
+    def doc_resource(s: MyState, req: Request, r: ResourceInfo):
+        calls.append((s, req, r))
+        return None
+
+    @tb.resource(for_type="cod")
+    def cod_resource(r: ResourceInfo, s: MyState, req: Request):
+        calls.append((s, req, r))
+        return None
+
+    req1 = Request(dict(type="http"))
+    r1 = await maybe_await(tb.handle_resource_request(req1, "doc", "doc1"))
+    req2 = Request(dict(type="http"))
+    r2 = await maybe_await(tb.handle_resource_request(req2, "cod", "cod1"))
+
+    assert len(calls) == 2
+    call1, call2 = calls
+    (s1, r1, ri1), (s2, r2, ri2) = calls
+    assert s1 is my_state
+    assert s2 is my_state
+    assert r1 is req1
+    assert r2 is req2
+    assert ri1.type == "doc"
+    assert ri1.id == "doc1"
+    assert ri2.type == "cod"
+    assert ri2.id == "cod1"
