@@ -2,6 +2,7 @@ import sys
 import time
 import asyncio
 import random
+from enum import Enum
 
 sys.path.append("../src")
 
@@ -397,6 +398,44 @@ def code_resource(state: State, request: Request, resource: ResourceInfo):
         return serve_static_file("./kitchensink.py", request)
     else:
         return None
+
+
+@tb.enum
+class Op(Enum):
+    "the operation to apply"
+
+    ADD = "add"
+    SUB = "sub"
+    MUL = "mul"
+    DIV = "div"
+
+
+@tb.tool
+def calculate(a: float = 0, op: Op = Op.ADD, b: float = 0):
+    r = 0
+    match op:
+        case Op.ADD:
+            r = a + b
+        case Op.SUB:
+            r = a - b
+        case Op.MUL:
+            r = a * b
+        case Op.DIV:
+            r = a / b
+        case _:
+            r = 0
+
+    return f"`{op}({a}, {b}) = {r}`"
+
+
+@tb.context_action(tool=calculate, target=Op)
+def calculate_context_action():
+    return [
+        {"args": {"a": 5, "op": Op.ADD, "b": 10}},
+        {"args": {"a": 5, "op": Op.SUB, "b": 10}},
+        {"args": {"a": 5, "op": Op.MUL, "b": 10}},
+        {"args": {"a": 5, "op": Op.DIV, "b": 10}},
+    ]
 
 
 def now_ms_ts():

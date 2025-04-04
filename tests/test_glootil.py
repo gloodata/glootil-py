@@ -2,11 +2,13 @@ import asyncio
 from enum import Enum
 from glootil import (
     Toolbox,
+    ContextActionInfo,
     DynEnum,
     DynTagValue,
     FixedTagValue,
     FnArg,
     NoneType,
+    maybe_await,
     try_cast_or,
     type_to_schema_type,
     basic_match_raw_tag_value,
@@ -249,6 +251,7 @@ def test_tool_all_types():
                 "h": {"type": "string", "default": "hi", "description": None},
             }
         },
+        "contextActions": [],
         "ui": {
             "prefix": t.name,
             "args": {
@@ -314,6 +317,7 @@ def test_toolbox_info():
                         "h": {"type": "string", "default": "hi", "description": None},
                     }
                 },
+                "contextActions": [],
                 "ui": {
                     "prefix": t.name,
                     "args": {
@@ -912,3 +916,104 @@ def test_response_log(caplog):
     assert len(caplog.records) == 1
     log = caplog.records[0]
     assert log.levelname == "WARNING"
+
+
+def test_gen_context_action_for_tool_enum_arg():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    class Op(Enum):
+        "the operation to apply"
+
+        ADD = "add"
+        SUB = "sub"
+        MUL = "mul"
+        DIV = "div"
+
+    @tb.tool
+    def my_tool(a: int, s: str = "hi", e: Op = Op.ADD):
+        pass
+
+    t = tb.tools[0]
+    e = tb.enums[0]
+
+    assert len(tb.context_actions_by_type_and_tool) == 0
+    cas = t.to_context_actions(tb)
+    assert len(cas) == 1
+    assert len(tb.context_actions_by_type_and_tool) == 1
+    assert len(tb.context_actions_by_type_and_tool[Op]) == 1
+    assert tb.context_actions_by_type_and_tool[Op][t]
+    ca = cas[0]
+    assert ca == {
+        "target": {"name": "Op"},
+        "handler": "ContextActionHandler::GenContextActionForToolAndArg-my_tool-e",
+    }
+
+    assert t.to_info(tb).get("contextActions") == cas
+
+
+def test_custom_context_action_for_tool_enum_arg():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    class Op(Enum):
+        ADD = "add"
+        SUB = "sub"
+
+    @tb.tool
+    def my_tool(a: int, s: str = "hi", e: Op = Op.ADD):
+        pass
+
+    @tb.context_action(tool=my_tool, target=Op)
+    def my_context_action():
+        return {"name": None, "args": {}}
+
+    t = tb.tools[0]
+    e = tb.enums[0]
+
+    assert len(tb.context_actions_by_type_and_tool) == 1
+    assert len(tb.context_actions_by_type_and_tool[Op]) == 1
+    assert tb.context_actions_by_type_and_tool[Op][t]
+    cas = t.to_context_actions(tb)
+    assert len(cas) == 1
+    ca = cas[0]
+    assert ca == {
+        "target": {"name": "Op"},
+        "handler": "ContextActionHandler::my_context_action",
+    }
+
+
+@pytest.mark.asyncio
+async def test_context_action_info_provided():
+    class MyState:
+        pass
+
+    tb = Toolbox("mytools", "My Tools", "some tools", state=MyState())
+
+    @tb.enum
+    class Op(Enum):
+        ADD = "add"
+        SUB = "sub"
+
+    @tb.tool
+    def my_tool(a: int, s: str = "hi", e: Op = Op.ADD):
+        pass
+
+    calls = []
+
+    @tb.context_action(tool=my_tool, target=Op)
+    def my_context_action(s: MyState, i: ContextActionInfo):
+        calls.append((s, i))
+        return {"args": {}}
+
+    t = tb.tools[0]
+    ca = t.to_context_actions(tb)[0]
+    op_name = ca["handler"]
+    req_value = {"ns": "ns1", "name": "tv1", "id": "foo", "label": "Foo"}
+    ra = tb.handle_action_request(op_name, {"value": req_value})
+    r = await maybe_await(ra)
+    assert len(calls) == 1
+    s, i = calls[0]
+    assert isinstance(s, MyState)
+    assert isinstance(i, ContextActionInfo)
+    assert i.value == req_value

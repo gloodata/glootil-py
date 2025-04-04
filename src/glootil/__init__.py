@@ -161,6 +161,18 @@ class ToolArg(FnArg):
             self.docs = docs
 
 
+def is_any_enum(t):
+    return isinstance(t, type) and issubclass(t, (Enum, DynEnum))
+
+
+def is_enum(t):
+    return isinstance(t, type) and issubclass(t, Enum)
+
+
+def is_dyn_enum(t):
+    return isinstance(t, type) and issubclass(t, DynEnum)
+
+
 def type_to_schema_type(t, default):
     if t is float:
         return "number", default if default is not None else 0.0
@@ -171,7 +183,7 @@ def type_to_schema_type(t, default):
     elif t is int:
         return "integer", default if default is not None else 0
     else:
-        if not (isinstance(t, type) and issubclass(t, (Enum, DynEnum))):
+        if not is_any_enum(t):
             logger.warning("unknown type for schema %s, returning string", t)
         return "string", ""
 
@@ -253,6 +265,16 @@ class Tool(FnInfo):
     def make_arg(cls, name, i, arg_type, arg_default):
         return ToolArg(name, i, arg_type, arg_default)
 
+    def to_context_actions(self, toolbox):
+        r = []
+        for arg in self.args:
+            if is_any_enum(arg.type):
+                info = toolbox.get_context_action_for_tool_enum_arg(self, arg)
+                if info:
+                    r.append(info)
+
+        return r
+
     def to_info(self, toolbox):
         args = [arg for arg in self.args if arg.type is not toolbox.State]
         return {
@@ -263,6 +285,7 @@ class Tool(FnInfo):
                 "prefix": self.ui_prefix,
                 "args": {arg.name: arg.to_ui_info(toolbox) for arg in args},
             },
+            "contextActions": self.to_context_actions(toolbox),
             "examples": self.examples,
         }
 
@@ -300,7 +323,28 @@ class Tool(FnInfo):
 class Task(FnInfo):
     @property
     def handler_id(self):
-        return f"task::{self.name}"
+        return f"Task::{self.name}"
+
+
+class ContextActionHandler(FnInfo):
+    @property
+    def handler_id(self):
+        return f"ContextActionHandler::{self.name}"
+
+
+class ContextActionInfo:
+    """
+    Information related to a context action request
+    Can be received as an argument to a @tb.context_action(...) handler
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+    @classmethod
+    def from_raw_info(cls, info):
+        value = info.get("value")
+        return cls(value)
 
 
 class ResourceHandler:
@@ -609,8 +653,10 @@ class Toolbox:
         self.docs = docs
 
         self.tools = []
+        self.tools_by_fn = {}
         self.tasks = []
         self.resource_handlers = {}
+        self.context_actions_by_type_and_tool = {}
         self._raw_task_to_task = {}
         self.enums = []
         self.enum_class_to_wrapper = {}
@@ -628,13 +674,56 @@ class Toolbox:
 
         return f"Toolbox({self.id}, {self.name}, {self.docs}){tools}"
 
+    def get_context_action_for_tool_enum_arg(self, tool, arg, generate_if_missing=True):
+        tv = self.enum_class_to_wrapper.get(arg.type)
+
+        if tv:
+            cah = self.context_actions_by_type_and_tool.get(arg.type, {}).get(tool)
+            if cah is None:
+                if generate_if_missing:
+                    cah = self.generate_context_action_for_tool_enum_arg(tool, arg)
+                else:
+                    return
+
+            return {"target": {"name": tv.id}, "handler": cah.handler_id}
+        else:
+            logger.warning(
+                "tool arg type not registered, forgot decorator? tool: %s, arg: %s",
+                tool,
+                arg,
+            )
+
+    def generate_context_action_for_tool_enum_arg(self, tool, arg):
+        def generated_context_action_handler():
+            return {"name": tool.handler_id, "args": {}}
+
+        overrides = {
+            "name": f"GenContextActionForToolAndArg-{tool.handler_id}-{arg.name}"
+        }
+        return self.add_context_action_handler_for_fn_tool_and_type(
+            generated_context_action_handler, tool, arg.type, overrides
+        )
+
     def provide_arg(self, arg, info):
-        if arg.type is self.State:
+        t = arg.type
+        if t is self.State:
             return self.state
+        elif t is ContextActionInfo:
+            # this one is only for context_action handlers, it's the only case where it's provided
+            v = info.get("info")
+            if isinstance(v, ContextActionInfo):
+                return v
+            elif v is not None:
+                logger.warning(
+                    "requested ContextActionInfo arg but got another type %s, %s",
+                    v,
+                    info,
+                )
+            return None
         else:
             v = info.get(arg.name)
-            if isinstance(arg.type, type) and issubclass(arg.type, (Enum, DynEnum)):
-                wrapper = self.enum_class_to_wrapper.get(arg.type)
+            if is_any_enum(t):
+                wrapper = self.enum_class_to_wrapper.get(t)
                 if wrapper:
                     # NOTE: This call is async and returns an awaitable
                     return wrapper.from_raw_arg_value(v)
@@ -675,6 +764,7 @@ class Toolbox:
         handler = lambda info: tool.call_with_args(self, info)
         self.add_handler(tool.handler_id, handler)
         self.tools.append(tool)
+        self.tools_by_fn[tool.fn] = tool
 
     def add_task(self, v):
         handler = lambda info: v.call_with_args(self, info)
@@ -689,12 +779,39 @@ class Toolbox:
 
         self.resource_handlers[for_type] = v
 
+    def add_context_action_handler_for_fn_tool_and_type(
+        self, fn, tool, type, overrides
+    ):
+        cah = ContextActionHandler.from_function(fn)
+        cah.apply_overrides(overrides)
+        self.add_context_action_handler_for_tool_and_type(cah, tool, type)
+        return cah
+
+    def add_context_action_handler_for_tool_and_type(self, cah, tool, type):
+        by_type = self.context_actions_by_type_and_tool.get(type)
+        if by_type is None:
+            by_type = {}
+            self.context_actions_by_type_and_tool[type] = by_type
+
+        if tool in by_type:
+            logger.warning(
+                "overriding context action handler for tool %s and type %s", tool, type
+            )
+
+        def handler(raw_info):
+            ca_info = ContextActionInfo.from_raw_info(raw_info)
+            print("context action handler", ca_info, raw_info)
+            return cah.call_with_args(self, {"info": ca_info})
+
+        self.add_handler(cah.handler_id, handler)
+        by_type[tool] = cah
+
     def enum(self, *args, **kwargs):
         if len(args) == 1 and len(kwargs) == 0:
             arg = args[0]
-            if isinstance(arg, type) and issubclass(arg, Enum):
+            if is_enum(arg):
                 self.add_enum(TagValue.from_enum_class(arg, {}))
-            elif isinstance(arg, type) and issubclass(arg, DynEnum):
+            elif is_dyn_enum(arg):
                 self.add_enum(TagValue.from_dyn_enum_class(arg, {}, self))
             else:
                 raise TypeError(
@@ -705,9 +822,9 @@ class Toolbox:
         else:
 
             def wrapper(arg):
-                if isinstance(arg, type) and issubclass(arg, Enum):
+                if is_enum(arg):
                     self.add_enum(TagValue.from_enum_class(arg, kwargs))
-                elif isinstance(arg, type) and issubclass(arg, DynEnum):
+                elif is_dyn_enum(arg):
                     self.add_enum(TagValue.from_dyn_enum_class(arg, kwargs, self))
                 else:
                     raise TypeError(
@@ -754,6 +871,23 @@ class Toolbox:
         def wrapper(fn):
             t = ResourceHandler(fn, for_type)
             self.add_resource_handler_for_type(t, for_type)
+            return fn
+
+        return wrapper
+
+    def context_action(self, tool, target, **kwargs):
+        # here tool is the raw fn since it's provided by the developer we need to get te real one
+        actual_tool = self.tools_by_fn.get(tool)
+
+        if actual_tool is None:
+            raise ValueError(
+                "context_action for tool that is not registered, forgot decorator or defined after?"
+            )
+
+        def wrapper(fn):
+            self.add_context_action_handler_for_fn_tool_and_type(
+                fn, actual_tool, target, kwargs
+            )
             return fn
 
         return wrapper
