@@ -173,6 +173,16 @@ def is_dyn_enum(t):
     return isinstance(t, type) and issubclass(t, DynEnum)
 
 
+def has_static_method(Class, name):
+    f = Class.__dict__.get(name, None)
+    return callable(f) and isinstance(f, staticmethod)
+
+
+def has_class_method(Class, name):
+    m = getattr(Class, name, None)
+    return inspect.ismethod(m)
+
+
 def type_to_schema_type(t, default):
     if t is float:
         return "number", default if default is not None else 0.0
@@ -199,11 +209,12 @@ class FnInfo:
     def __str__(self):
         return f"def {self.name}({', '.join([str(arg) for arg in self.args])}) -> {self.return_type}:\n\t{self.docs}"
 
-    async def call_with_args(self, args_provider, info):
+    async def call_with_args(self, args_provider, info, result_mapper=identity):
         args0 = [args_provider.provide_arg(arg, info) for arg in self.args]
         # await all items in arg that needs awaiting
         args = [await arg if inspect.isawaitable(arg) else arg for arg in args0]
-        return self.fn(*args)
+        result = await maybe_await(self.fn(*args))
+        return result_mapper(result)
 
     @classmethod
     def make_arg(cls, name, i, arg_type, arg_default):
@@ -438,6 +449,44 @@ class DynEnum:
         return []
 
 
+def is_valid_match_entry(v):
+    return (
+        isinstance(v, (tuple, list))
+        and len(v) == 2
+        and isinstance(v[0], str)
+        and isinstance(v[1], str)
+    )
+
+
+def match_result_to_response(v):
+    if v is None or is_valid_match_entry(v):
+        return {"entry": v}
+    elif isinstance(v, dict):
+        entry = v.get("entry")
+        if is_valid_match_entry(entry):
+            return {"entry": entry}
+
+    logger.warning(
+        "bad enum match result format, expected 2 string item list or tuple or entry dict, got: %s",
+        v,
+    )
+    return {"entry": None}
+
+
+def search_result_to_response(v):
+    if isinstance(v, list):
+        return {"entries": v}
+    elif isinstance(v, dict):
+        entries = v.get("entries")
+        if isinstance(entries, list):
+            return {"entries": entries}
+
+    logger.warning(
+        "bad enum search result format, expected list or entries dict, got: %s", v
+    )
+    return {"entries": []}
+
+
 class TagValue:
     def __init__(self, id, name, docs, icon="list"):
         self.id = id
@@ -518,18 +567,43 @@ class TagValue:
         name = id
         docs = Class.__doc__
 
-        load_fn_info = FnInfo.from_function(Class.load)
+        if has_static_method(Class, "load"):
+            load_fn_info = FnInfo.from_function(Class.load)
 
-        e = DynTagValue(
-            id,
-            name,
-            docs,
-            Class,
-            lambda: load_fn_info.call_with_args(fn_arg_provider, {}),
-        )
-        e.apply_overrides(overrides)
+            e = DynTagValue(
+                id,
+                name,
+                docs,
+                Class,
+                lambda: load_fn_info.call_with_args(fn_arg_provider, {}),
+            )
+            e.apply_overrides(overrides)
 
-        return e
+            return e
+        elif has_static_method(Class, "search"):
+            search_fn_info = FnInfo.from_function(Class.search)
+            if has_static_method(Class, "match_closest"):
+                match_closest_fn_info = FnInfo.from_function(Class.match_closest)
+            else:
+                match_closest_fn_info = FnInfo.from_function(lambda: None)
+
+            e = DynSearchTagValue(
+                id,
+                name,
+                docs,
+                Class,
+                lambda info: search_fn_info.call_with_args(
+                    fn_arg_provider, info, result_mapper=search_result_to_response
+                ),
+                lambda info: match_closest_fn_info.call_with_args(
+                    fn_arg_provider, info, result_mapper=match_result_to_response
+                ),
+            )
+            e.apply_overrides(overrides)
+
+            return e
+        else:
+            raise ValueError("DynEnum must have either a load or a search classmethod")
 
 
 class FixedTagValue(TagValue):
@@ -618,6 +692,56 @@ class DynTagValue(TagValue):
             "icon": self.icon,
             "matchHandlerId": self.match_handler_id,
             "loadEntriesHandlerId": self.load_handler_id,
+        }
+
+
+class DynSearchTagValue(TagValue):
+    def __init__(self, id, name, docs, EnumClass, search_fn, closest_match_fn):
+        super().__init__(id, name, docs)
+        self.EnumClass = EnumClass
+        self.search_fn = search_fn
+        self.closest_match_fn = closest_match_fn
+
+    async def from_raw_arg_value(self, v):
+        v = await self.closest_match(str(v))
+        if v:
+            key, value = v
+            return self.EnumClass(key, value)
+
+        return None
+
+    @property
+    def match_handler_id(self):
+        return f"enum::{self.id}::match"
+
+    @property
+    def search_handler_id(self):
+        return f"enum::{self.id}::search"
+
+    async def get_variants(self):
+        logger.warning("calling get_variants in DynSearchTagValue")
+        return []
+
+    async def load_handler(self, info):
+        return await maybe_await(self.search_fn(info))
+
+    async def closest_match(self, word):
+        return await maybe_await(self.closest_match_fn({"value": word}))
+
+    def get_handlers(self):
+        return [
+            (self.match_handler_id, self.match_handler),
+            (self.search_handler_id, self.load_handler),
+        ]
+
+    def to_info(self, _toolbox):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.docs,
+            "icon": self.icon,
+            "matchHandlerId": self.match_handler_id,
+            "searchHandlerId": self.search_handler_id,
         }
 
 

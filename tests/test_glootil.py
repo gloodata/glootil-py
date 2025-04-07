@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from enum import Enum
 from glootil import (
     Toolbox,
@@ -9,6 +10,10 @@ from glootil import (
     FixedTagValue,
     FnArg,
     NoneType,
+    search_result_to_response,
+    match_result_to_response,
+    has_class_method,
+    has_static_method,
     maybe_await,
     try_cast_or,
     type_to_schema_type,
@@ -1057,3 +1062,170 @@ async def test_resource_info_provided():
     assert ri1.id == "doc1"
     assert ri2.type == "cod"
     assert ri2.id == "cod1"
+
+
+def test_has_static_method():
+    class Foo:
+        @staticmethod
+        def m1():
+            pass
+
+        @classmethod
+        def m2(cls):
+            pass
+
+        def m3(self):
+            pass
+
+    assert has_static_method(Foo, "m1")
+    assert not has_static_method(Foo, "m2")
+    assert not has_static_method(Foo, "m3")
+
+
+def test_has_class_method():
+    class Foo:
+        @staticmethod
+        def m1():
+            pass
+
+        @classmethod
+        def m2(cls):
+            pass
+
+        def m3(self):
+            pass
+
+    assert not has_class_method(Foo, "m1")
+    assert has_class_method(Foo, "m2")
+    assert not has_class_method(Foo, "m3")
+
+
+def test_search_result_to_response():
+    f = search_result_to_response
+    assert f([]) == {"entries": []}
+    assert f([("A", "a")]) == {"entries": [("A", "a")]}
+    assert f({"entries": [("A", "a")]}) == {"entries": [("A", "a")]}
+    assert f({"asd": [("A", "a")]}) == {"entries": []}
+
+
+@pytest.mark.asyncio
+async def test_dyn_search_enum():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    class Operation(DynEnum):
+        @staticmethod
+        def search(query: str = ""):
+            all = [
+                ("ADD", "add"),
+                ("SUB", "sub"),
+                ("MUL", "mul"),
+                ("DIV", "div"),
+            ]
+            return [(k, v) for k, v in all if query in v]
+
+    e = tb.enums[0]
+
+    assert tb.handlers[e.search_handler_id] == e.load_handler
+    assert await e.load_handler(dict(query="a")) == {"entries": [("ADD", "add")]}
+    assert await e.load_handler(dict(query="u")) == {
+        "entries": [("SUB", "sub"), ("MUL", "mul")]
+    }
+    assert await e.load_handler(dict(query="x")) == {"entries": []}
+    assert await e.match_handler(dict(value="x")) == {"entry": None}
+
+
+def test_match_result_to_response():
+    f = match_result_to_response
+    assert f(None) == {"entry": None}
+
+    assert f(1) == {"entry": None}
+
+    assert f(("a", 1)) == {"entry": None}
+    assert f((1, "a")) == {"entry": None}
+    assert f(("A", "a", "other")) == {"entry": None}
+
+    assert f(["a", 1]) == {"entry": None}
+    assert f([1, "a"]) == {"entry": None}
+    assert f(["A", "a", "other"]) == {"entry": None}
+
+    assert f(("a", "A")) == {"entry": ("a", "A")}
+    assert f(["a", "A"]) == {"entry": ["a", "A"]}
+
+    assert f({"entry": ("a", "A")}) == {"entry": ("a", "A")}
+    assert f({"entry": ["a", "A"]}) == {"entry": ["a", "A"]}
+    assert f({"entry!": ("a", "A")}) == {"entry": None}
+    assert f({"entry": ("a", "A", "other")}) == {"entry": None}
+
+
+@pytest.mark.asyncio
+async def test_dyn_search_enum_custom_match():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    all = [
+        ("ADD", "add"),
+        ("SUB", "sub"),
+        ("MUL", "mul"),
+        ("DIV", "div"),
+    ]
+
+    @tb.enum
+    class Operation(DynEnum):
+        @staticmethod
+        def search(query: str = ""):
+            return [(k, v) for k, v in all if query in v]
+
+        @staticmethod
+        def match_closest(value: str = ""):
+            for key, val in all:
+                if value in val:
+                    return (key, val)
+            return None
+
+    e = tb.enums[0]
+
+    assert tb.handlers[e.match_handler_id] == e.match_handler
+    assert await e.match_handler(dict(value="a")) == {"entry": ("ADD", "add")}
+    assert await e.match_handler(dict(value="u")) == {"entry": ("SUB", "sub")}
+    assert await e.match_handler(dict(value="x")) == {"entry": None}
+
+
+@pytest.mark.asyncio
+async def test_dyn_search_enum_async_handlers():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    all = [
+        ("ADD", "add"),
+        ("SUB", "sub"),
+        ("MUL", "mul"),
+        ("DIV", "div"),
+    ]
+
+    @tb.enum
+    class Operation(DynEnum):
+        @staticmethod
+        async def search(query: str = ""):
+            await asyncio.sleep(0.010)
+            return [(k, v) for k, v in all if query in v]
+
+        @staticmethod
+        async def match_closest(value: str = ""):
+            await asyncio.sleep(0.010)
+            for key, val in all:
+                if value in val:
+                    return (key, val)
+            return None
+
+    e = tb.enums[0]
+
+    assert tb.handlers[e.search_handler_id] == e.load_handler
+    assert await e.load_handler(dict(query="a")) == {"entries": [("ADD", "add")]}
+    assert await e.load_handler(dict(query="u")) == {
+        "entries": [("SUB", "sub"), ("MUL", "mul")]
+    }
+    assert await e.load_handler(dict(query="x")) == {"entries": []}
+
+    assert tb.handlers[e.match_handler_id] == e.match_handler
+    assert await e.match_handler(dict(value="a")) == {"entry": ("ADD", "add")}
+    assert await e.match_handler(dict(value="u")) == {"entry": ("SUB", "sub")}
+    assert await e.match_handler(dict(value="x")) == {"entry": None}
