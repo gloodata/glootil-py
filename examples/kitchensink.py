@@ -6,7 +6,7 @@ from enum import Enum
 
 sys.path.append("../src")
 
-from glootil import Toolbox, ResourceInfo, serve_static_file
+from glootil import Toolbox, ResourceInfo, DynEnum, serve_static_file
 from fastapi import Request
 
 
@@ -388,8 +388,6 @@ def show_sample_document():
 def pdf_resource(request: Request, resource: ResourceInfo):
     if resource.id == "book":
         return serve_static_file("./book.pdf", request)
-    else:
-        return None
 
 
 @tb.resource(for_type="code")
@@ -436,6 +434,40 @@ def calculate_context_action():
         {"args": {"a": 5, "op": Op.MUL, "b": 10}},
         {"args": {"a": 5, "op": Op.DIV, "b": 10}},
     ]
+
+
+@tb.enum
+class Country(DynEnum):
+    @staticmethod
+    def load():
+        return [
+            ("US", "United States"),
+            ("CA", "Canada"),
+            ("MX", "Mexico"),
+            ("FR", "France"),
+            ("DE", "Germany"),
+            ("IT", "Italy"),
+            ("CN", "China"),
+            ("JP", "Japan"),
+            ("IN", "India"),
+            ("BR", "Brazil"),
+            ("AR", "Argentina"),
+            ("CO", "Colombia"),
+            ("ZA", "South Africa"),
+            ("NG", "Nigeria"),
+            ("EG", "Egypt"),
+            ("AU", "Australia"),
+            ("NZ", "New Zealand"),
+            ("FJ", "Fiji"),
+        ]
+
+
+DEFAULT_COUNTRY = Country("FJ", "Fiji")
+
+
+@tb.tool
+def country_information(country: Country = DEFAULT_COUNTRY):
+    return f"# Country Info\n\nCode: `{country.key}`\n\nName: {country.label}"
 
 
 def now_ms_ts():
