@@ -1,5 +1,4 @@
 import os
-import asyncio
 import inspect
 import logging
 import typing
@@ -704,9 +703,15 @@ class DynSearchTagValue(TagValue):
 
     async def from_raw_arg_value(self, v):
         v = await self.closest_match(str(v))
-        if v:
-            key, value = v
-            return self.EnumClass(key, value)
+        if isinstance(v, dict) and "entry" in v:
+            entry = v.get("entry")
+            if isinstance(entry, (tuple, list)) and len(entry) == 2:
+                key, value = entry
+                return self.EnumClass(key, value)
+            elif entry is not None:
+                logger.warning("bad TagValue result format, got: %s", v)
+        elif v is not None:
+            logger.warning("bad TagValue result format, got: %s", v)
 
         return None
 
@@ -1068,12 +1073,15 @@ class Toolbox:
         return toolbox_to_fastapi(self)
 
     def serve(self, host="127.0.0.1", port=8086):
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        loop.run_until_complete(self.setup())
-        serve_uvicorn(self.to_fastapi_app(), host, port)
+        import uvicorn
+
+        app = self.to_fastapi_app()
+
+        @app.on_event("startup")
+        async def setup():
+            await self.setup()
+
+        return uvicorn.run(app, host=host, port=port)
 
 
 def _provide_arg_of_type(info, key, Class):
@@ -1092,12 +1100,6 @@ def _provide_arg_of_type(info, key, Class):
 
 def res_error(code, reason, info=None):
     return {"ok": False, "code": code, "reason": reason, "info": info}
-
-
-def serve_uvicorn(app, host="127.0.0.1", port=8086):
-    import uvicorn
-
-    return uvicorn.run(app, host=host, port=port)
 
 
 async def maybe_await(v):
