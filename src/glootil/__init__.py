@@ -448,22 +448,44 @@ class DynEnum:
         return []
 
 
-def is_valid_match_entry(v):
-    return (
-        isinstance(v, (tuple, list))
-        and len(v) == 2
-        and isinstance(v[0], str)
-        and isinstance(v[1], str)
+def is_seq_match_entry(v):
+    return isinstance(v, (tuple, list)) and (
+        len(v) == 2 and isinstance(v[0], str) and isinstance(v[1], str)
     )
 
 
+def is_map_match_entry(v):
+    return (
+        isinstance(v, dict)
+        and len(v) == 2
+        and isinstance(v["key"], str)
+        and isinstance(v["label"], str)
+    )
+
+
+def is_valid_match_entry(v):
+    return (is_seq_match_entry(v)) or is_map_match_entry(v)
+
+
+def normalize_match_entry(entry):
+    if is_seq_match_entry(entry):
+        k, v = entry
+        return (k, v)
+    elif is_map_match_entry(entry):
+        return (entry["key"], entry["label"])
+    else:
+        raise ValueError("Invalid match entry format")
+
+
 def match_result_to_response(v):
-    if v is None or is_valid_match_entry(v):
+    if v is None:
         return {"entry": v}
+    elif is_valid_match_entry(v):
+        return {"entry": normalize_match_entry(v)}
     elif isinstance(v, dict):
         entry = v.get("entry")
         if is_valid_match_entry(entry):
-            return {"entry": entry}
+            return {"entry": normalize_match_entry(entry)}
 
     logger.warning(
         "bad enum match result format, expected 2 string item list or tuple or entry dict, got: %s",
@@ -472,13 +494,43 @@ def match_result_to_response(v):
     return {"entry": None}
 
 
+def normalize_search_result_entries(entries):
+    return [
+        normalize_search_result_entry(entry)
+        for entry in entries
+        if is_valid_search_result_entry(entry)
+    ]
+
+
+def normalize_search_result_entry(entry):
+    if is_seq_search_result_entry(entry):
+        k, v = entry
+        return (k, v)
+    elif is_map_search_result_entry(entry):
+        return (entry["key"], entry["label"])
+    else:
+        raise ValueError("Invalid search result entry format")
+
+
+def is_valid_search_result_entry(entry):
+    return is_seq_search_result_entry(entry) or is_map_search_result_entry(entry)
+
+
+def is_seq_search_result_entry(entry):
+    return is_seq_match_entry(entry)
+
+
+def is_map_search_result_entry(entry):
+    return is_map_match_entry(entry)
+
+
 def search_result_to_response(v):
     if isinstance(v, list):
-        return {"entries": v}
+        return {"entries": normalize_search_result_entries(v)}
     elif isinstance(v, dict):
         entries = v.get("entries")
         if isinstance(entries, list):
-            return {"entries": entries}
+            return {"entries": normalize_search_result_entries(entries)}
 
     logger.warning(
         "bad enum search result format, expected list or entries dict, got: %s", v

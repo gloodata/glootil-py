@@ -1105,6 +1105,11 @@ def test_search_result_to_response():
     assert f([]) == {"entries": []}
     assert f([("A", "a")]) == {"entries": [("A", "a")]}
     assert f({"entries": [("A", "a")]}) == {"entries": [("A", "a")]}
+    assert f({"entries": [["A", "a"]]}) == {"entries": [("A", "a")]}
+    assert f({"entries": [dict(key="A", label="a")]}) == {"entries": [("A", "a")]}
+    assert f(
+        {"entries": [("A", "a"), ["B", "b"], dict(key="C", label="c"), "bad"]}
+    ) == {"entries": [("A", "a"), ("B", "b"), ("C", "c")]}
     assert f({"asd": [("A", "a")]}) == {"entries": []}
 
 
@@ -1150,10 +1155,11 @@ def test_match_result_to_response():
     assert f(["A", "a", "other"]) == {"entry": None}
 
     assert f(("a", "A")) == {"entry": ("a", "A")}
-    assert f(["a", "A"]) == {"entry": ["a", "A"]}
+    assert f(["a", "A"]) == {"entry": ("a", "A")}
+    assert f(dict(key="a", label="A")) == {"entry": ("a", "A")}
 
     assert f({"entry": ("a", "A")}) == {"entry": ("a", "A")}
-    assert f({"entry": ["a", "A"]}) == {"entry": ["a", "A"]}
+    assert f({"entry": ["a", "A"]}) == {"entry": ("a", "A")}
     assert f({"entry!": ("a", "A")}) == {"entry": None}
     assert f({"entry": ("a", "A", "other")}) == {"entry": None}
 
