@@ -1,5 +1,4 @@
 import asyncio
-import inspect
 from enum import Enum
 from glootil import (
     Toolbox,
@@ -395,8 +394,8 @@ async def test_enum_class_default_matcher():
 
     e = tb.enums[0]
 
-    assert await e.closest_match("ad") == ("ADD", "add")
-    assert await e.closest_match("mu") == ("MUL", "mul")
+    assert await e.match_closest("ad") == ("ADD", "add")
+    assert await e.match_closest("mu") == ("MUL", "mul")
 
 
 @pytest.mark.asyncio
@@ -418,8 +417,8 @@ async def test_enum_class_custom_matcher():
     e = tb.enums[0]
 
     assert e.closest_matcher == matcher_always_first
-    assert await e.closest_match("") == ("ADD", "add")
-    assert await e.closest_match("mul") == ("ADD", "add")
+    assert await e.match_closest("") == ("ADD", "add")
+    assert await e.match_closest("mul") == ("ADD", "add")
 
 
 @pytest.mark.asyncio
@@ -669,9 +668,9 @@ async def test_fn_enum_default_matcher():
 
     e = tb.enums[0]
 
-    assert await e.closest_match("1") == ("01", "January")
-    assert await e.closest_match("2") == ("02", "February")
-    assert await e.closest_match("may") == ("05", "May")
+    assert await e.match_closest("1") == ("01", "January")
+    assert await e.match_closest("2") == ("02", "February")
+    assert await e.match_closest("may") == ("05", "May")
 
 
 @pytest.mark.asyncio
@@ -690,9 +689,9 @@ async def test_fn_enum_custom_matcher():
     e = tb.enums[0]
 
     assert e.closest_matcher == matcher_always_first
-    assert await e.closest_match("") == ("01", "January")
-    assert await e.closest_match("02") == ("01", "January")
-    assert await e.closest_match("May") == ("01", "January")
+    assert await e.match_closest("") == ("01", "January")
+    assert await e.match_closest("02") == ("01", "January")
+    assert await e.match_closest("May") == ("01", "January")
 
 
 @pytest.mark.asyncio
@@ -1218,10 +1217,21 @@ async def test_dyn_search_enum_async_handlers():
         async def match_closest(value: str = ""):
             await asyncio.sleep(0.010)
             for key, val in all:
-                if value in val:
+                if value in key or value in val:
                     return (key, val)
             return None
 
+    DEFAULT_OPERATION = Operation("ADD", "add")
+    calls = []
+
+    @tb.tool
+    async def calculate(
+        a: float = 0.0, op: Operation = DEFAULT_OPERATION, b: float = 1.0
+    ):
+        calls.append((a, op, b))
+        return 0
+
+    t = tb.tools[0]
     e = tb.enums[0]
 
     assert tb.handlers[e.search_handler_id] == e.load_handler
@@ -1235,3 +1245,21 @@ async def test_dyn_search_enum_async_handlers():
     assert await e.match_handler(dict(value="a")) == {"entry": ("ADD", "add")}
     assert await e.match_handler(dict(value="u")) == {"entry": ("SUB", "sub")}
     assert await e.match_handler(dict(value="x")) == {"entry": None}
+
+    await maybe_await(
+        tb.handle_action_request("calculate", dict(a=1.0, op="ADD", b=2.0))
+    )
+    await maybe_await(
+        tb.handle_action_request("calculate", dict(a=1.0, op="sub", b=2.0))
+    )
+    await maybe_await(tb.handle_action_request("calculate", dict(a=1.0, op="A", b=2.0)))
+    await maybe_await(tb.handle_action_request("calculate", dict(a=1.0, b=2.0)))
+
+    assert len(calls) == 4
+    print(calls)
+    assert calls == [
+        (1.0, Operation("ADD", "add"), 2.0),
+        (1.0, Operation("SUB", "sub"), 2.0),
+        (1.0, Operation("ADD", "add"), 2.0),
+        (1.0, Operation("ADD", "add"), 2.0),
+    ]

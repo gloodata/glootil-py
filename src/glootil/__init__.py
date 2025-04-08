@@ -7,7 +7,7 @@ from datetime import date
 from difflib import SequenceMatcher
 from enum import Enum
 
-from typing import Optional, BinaryIO, Dict, Any
+from typing import BinaryIO
 
 logger = logging.getLogger("glootil")
 
@@ -209,10 +209,17 @@ class FnInfo:
         return f"def {self.name}({', '.join([str(arg) for arg in self.args])}) -> {self.return_type}:\n\t{self.docs}"
 
     async def call_with_args(self, args_provider, info, result_mapper=identity):
-        args0 = [args_provider.provide_arg(arg, info) for arg in self.args]
-        # await all items in arg that needs awaiting
-        args = [await arg if inspect.isawaitable(arg) else arg for arg in args0]
-        result = await maybe_await(self.fn(*args))
+        arg_vals = []
+        for arg in self.args:
+            arg_val0 = args_provider.provide_arg(arg, info)
+            if inspect.isawaitable(arg_val0):
+                arg_val = await arg_val0
+            else:
+                arg_val = arg_val0
+
+            arg_vals.append(arg_val if arg_val is not None else arg.default_value)
+
+        result = await maybe_await(self.fn(*arg_vals))
         return result_mapper(result)
 
     @classmethod
@@ -441,7 +448,7 @@ class DynEnum:
         self.label = label
 
     def __eq__(self, other):
-        return self.key == other.key and self.label == other.label
+        return other and self.key == other.key and self.label == other.label
 
     @staticmethod
     def load():
@@ -454,7 +461,7 @@ def is_seq_match_entry(v):
     )
 
 
-def is_map_match_entry(v):
+def is_dict_match_entry(v):
     return (
         isinstance(v, dict)
         and len(v) == 2
@@ -464,14 +471,14 @@ def is_map_match_entry(v):
 
 
 def is_valid_match_entry(v):
-    return (is_seq_match_entry(v)) or is_map_match_entry(v)
+    return (is_seq_match_entry(v)) or is_dict_match_entry(v)
 
 
 def normalize_match_entry(entry):
     if is_seq_match_entry(entry):
         k, v = entry
         return (k, v)
-    elif is_map_match_entry(entry):
+    elif is_dict_match_entry(entry):
         return (entry["key"], entry["label"])
     else:
         raise ValueError("Invalid match entry format")
@@ -492,6 +499,24 @@ def match_result_to_response(v):
         v,
     )
     return {"entry": None}
+
+
+def extract_match_entry_key_and_label_or_none(m):
+    if m is None:
+        return None
+
+    if isinstance(m, dict) and "entry" in m:
+        entry = m.get("entry")
+        if is_seq_match_entry(entry):
+            return entry
+        elif is_dict_match_entry(entry):
+            return entry["key"], entry["label"]
+    if is_seq_match_entry(m):
+        return m
+    elif is_dict_match_entry(m):
+        return m["key"], m["label"]
+
+    return None
 
 
 def normalize_search_result_entries(entries):
@@ -521,7 +546,7 @@ def is_seq_search_result_entry(entry):
 
 
 def is_map_search_result_entry(entry):
-    return is_map_match_entry(entry)
+    return is_dict_match_entry(entry)
 
 
 def search_result_to_response(v):
@@ -558,17 +583,17 @@ class TagValue:
         }
 
     async def from_raw_arg_value(self, v):
-        return await self.closest_match(str(v))
+        return await self.match_closest(str(v))
 
     async def match_handler(self, info):
         value = info.get("value", "")
-        return await self.closest_match(value)
+        return await self.match_closest(value)
 
     async def load_handler(self, _info):
         entries = to_list_of_pairs(await self.get_variants())
         return dict(entries=entries)
 
-    async def closest_match(self, word):
+    async def match_closest(self, word):
         variant_pairs = to_seq_of_pairs(await self.get_variants())
         _, pair = self.closest_matcher(word, variant_pairs)
         return pair
@@ -638,18 +663,17 @@ class TagValue:
             else:
                 match_closest_fn_info = FnInfo.from_function(lambda: None)
 
-            e = DynSearchTagValue(
-                id,
-                name,
-                docs,
-                Class,
-                lambda info: search_fn_info.call_with_args(
+            def search_fn(info):
+                return search_fn_info.call_with_args(
                     fn_arg_provider, info, result_mapper=search_result_to_response
-                ),
-                lambda info: match_closest_fn_info.call_with_args(
+                )
+
+            def match_closest_fn(info):
+                return match_closest_fn_info.call_with_args(
                     fn_arg_provider, info, result_mapper=match_result_to_response
-                ),
-            )
+                )
+
+            e = DynSearchTagValue(id, name, docs, Class, search_fn, match_closest_fn)
             e.apply_overrides(overrides)
 
             return e
@@ -664,10 +688,13 @@ class FixedTagValue(TagValue):
         self.variants = variants
 
     async def from_raw_arg_value(self, v):
-        v = await self.closest_match(str(v))
-        if v:
-            key, value = v
+        m = await self.match_closest(str(v))
+        t = extract_match_entry_key_and_label_or_none(m)
+        if t:
+            key, _value = t
             return self.EnumClass.__members__.get(key)
+        elif m is not None:
+            logger.warning("bad TagValue result format, got: %s", v)
 
         return None
 
@@ -703,7 +730,7 @@ class DynTagValue(TagValue):
         self._cached_variants = None
 
     async def from_raw_arg_value(self, v):
-        v = await self.closest_match(str(v))
+        v = await self.match_closest(str(v))
         if v:
             key, value = v
             return self.EnumClass(key, value)
@@ -747,22 +774,19 @@ class DynTagValue(TagValue):
 
 
 class DynSearchTagValue(TagValue):
-    def __init__(self, id, name, docs, EnumClass, search_fn, closest_match_fn):
+    def __init__(self, id, name, docs, EnumClass, search_fn, match_closest_fn):
         super().__init__(id, name, docs)
         self.EnumClass = EnumClass
         self.search_fn = search_fn
-        self.closest_match_fn = closest_match_fn
+        self.match_closest_fn = match_closest_fn
 
     async def from_raw_arg_value(self, v):
-        v = await self.closest_match(str(v))
-        if isinstance(v, dict) and "entry" in v:
-            entry = v.get("entry")
-            if isinstance(entry, (tuple, list)) and len(entry) == 2:
-                key, value = entry
-                return self.EnumClass(key, value)
-            elif entry is not None:
-                logger.warning("bad TagValue result format, got: %s", v)
-        elif v is not None:
+        m = await self.match_closest(str(v))
+        t = extract_match_entry_key_and_label_or_none(m)
+        if t:
+            key, value = t
+            return self.EnumClass(key, value)
+        elif m is not None:
             logger.warning("bad TagValue result format, got: %s", v)
 
         return None
@@ -782,8 +806,8 @@ class DynSearchTagValue(TagValue):
     async def load_handler(self, info):
         return await maybe_await(self.search_fn(info))
 
-    async def closest_match(self, word):
-        return await maybe_await(self.closest_match_fn({"value": word}))
+    async def match_closest(self, word):
+        return await maybe_await(self.match_closest_fn({"value": word}))
 
     def get_handlers(self):
         return [
@@ -909,7 +933,8 @@ class Toolbox:
                 wrapper = self.enum_class_to_wrapper.get(t)
                 if wrapper:
                     # NOTE: This call is async and returns an awaitable
-                    return wrapper.from_raw_arg_value(v)
+                    r = wrapper.from_raw_arg_value(v)
+                    return r if r is not None else arg.default_value
                 else:
                     logger.warning("enum class argument type not annotated? %s", arg)
                     return arg.default_value
@@ -944,13 +969,17 @@ class Toolbox:
         self.enums.append(v)
 
     def add_tool(self, tool):
-        handler = lambda info: tool.call_with_args(self, info)
+        def handler(info):
+            return tool.call_with_args(self, info)
+
         self.add_handler(tool.handler_id, handler)
         self.tools.append(tool)
         self.tools_by_fn[tool.fn] = tool
 
     def add_task(self, v):
-        handler = lambda info: v.call_with_args(self, info)
+        def handler(info):
+            return v.call_with_args(self, info)
+
         self.add_handler(v.handler_id, handler)
         self._raw_task_to_task[v.fn] = v
 
