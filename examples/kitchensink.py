@@ -471,10 +471,12 @@ DEFAULT_COUNTRY = Country("FJ", "Fiji")
 def country_information(country: Country = DEFAULT_COUNTRY):
     return f"# Country Info\n\nCode: `{country.key}`\n\nName: {country.label}"
 
+
 @tb.tool
 def show_date(d: date):
     d = d if d else date.today()
     return f"Date: {d}"
+
 
 def now_ms_ts():
     return time.time() * 1000

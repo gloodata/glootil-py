@@ -124,9 +124,11 @@ def test_tool_call_override_name_and_args():
     tb = Toolbox("mytools", "My Tools", "some tools")
 
     @tb.tool(
-        name="substract", docs="my docs", args={"a": {"name": "Left"}, "b": "Right"}
+        name="substract",
+        docs="my docs",
+        args={"a": {"name": "Left", "docs": "Left operand"}, "b": "Right"},
     )
-    def sub(a, b):
+    def sub(a: int, b):
         return a - b
 
     t = tb.tools[0]
@@ -138,7 +140,15 @@ def test_tool_call_override_name_and_args():
     a, b = t.args
 
     assert a.label == "Left"
+    assert a.docs == "Left operand"
     assert b.label == "Right"
+    assert b.docs is None
+
+    assert a.to_schema_info() == {
+        "description": "Left operand",
+        "type": "integer",
+        "default": 0,
+    }
 
 
 def test_enum_class():
