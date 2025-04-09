@@ -477,6 +477,46 @@ def show_date(d: date):
     d = d if d else date.today()
     return f"Date: {d}"
 
+@tb.enum
+class DateDiffUnit(Enum):
+    DAYS = "Days"
+    WEEKS = "Weeks"
+    MONTHS = "Months"
+    YEARS = "Years"
+
+
+@tb.tool(
+    name="Date Difference",
+    args={
+        "a": {
+            "name": "From",
+            "docs": "The starting date, default to one week ago from today if not provided",
+        },
+        "b": {"name": "To", "docs": "The end date, default to today if not provided"},
+        "unit": {"name": "Unit", "docs": "The unit of time to use for the difference"}
+    },
+    examples=[
+        "days between the moon landing and first barack obama inauguration",
+        "years between the first flight and the moon landing",
+    ],
+)
+def date_diff(a: date, b: date, unit: DateDiffUnit = DateDiffUnit.DAYS):
+    b = b if b else date.today()
+    a = a if a else b or date.today()
+
+    if unit == DateDiffUnit.WEEKS:
+        d = (b - a).days / 7
+    elif unit == DateDiffUnit.MONTHS:
+        d = (b - a).days / 30
+    elif unit == DateDiffUnit.YEARS:
+        d = (b - a).days / 365
+    else:
+        unit = DateDiffUnit.DAYS
+        d = (b - a).days
+
+    d = int(d)
+    return f"Difference between {a} and {b}: {d} {unit.value}"
+
 
 def now_ms_ts():
     return time.time() * 1000
