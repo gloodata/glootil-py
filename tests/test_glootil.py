@@ -25,7 +25,6 @@ from datetime import date
 from fastapi import Request
 
 import pytest
-import pytest_asyncio
 
 all_months = [
     ("01", "January"),
@@ -201,27 +200,27 @@ def test_empty_build_tool_info():
 
 
 def test_type_to_schema_type_int():
-    assert type_to_schema_type(int, None) == ("integer", 0)
-    assert type_to_schema_type(int, 42) == ("integer", 42)
+    assert type_to_schema_type(int, None) == ("integer", 0, None)
+    assert type_to_schema_type(int, 42) == ("integer", 42, None)
 
 
 def test_type_to_schema_type_float():
-    assert type_to_schema_type(float, None) == ("number", 0.0)
-    assert type_to_schema_type(float, 3.14) == ("number", 3.14)
+    assert type_to_schema_type(float, None) == ("number", 0.0, None)
+    assert type_to_schema_type(float, 3.14) == ("number", 3.14, None)
 
 
 def test_type_to_schema_type_str():
-    assert type_to_schema_type(str, None) == ("string", "")
-    assert type_to_schema_type(str, "hello") == ("string", "hello")
+    assert type_to_schema_type(str, None) == ("string", "", None)
+    assert type_to_schema_type(str, "hello") == ("string", "hello", None)
 
 
 def test_type_to_schema_type_bool():
-    assert type_to_schema_type(bool, None) == ("boolean", False)
-    assert type_to_schema_type(bool, True) == ("boolean", True)
+    assert type_to_schema_type(bool, None) == ("boolean", False, None)
+    assert type_to_schema_type(bool, True) == ("boolean", True, None)
 
 
 def test_type_to_schema_type_fallthrough():
-    assert type_to_schema_type(list, None) == ("string", "")
+    assert type_to_schema_type(list, None) == ("string", "", None)
 
 
 def test_tool_all_types():
@@ -232,7 +231,8 @@ def test_tool_all_types():
         a: int,
         b: float,
         c: bool,
-        d: str,
+        d: date,
+        s: str,
         e: int = 10,
         f: float = 1.5,
         g: bool = True,
@@ -242,7 +242,7 @@ def test_tool_all_types():
 
     t = tb.tools[0]
 
-    assert t.to_info(tb) == {
+    expected = {
         "title": t.name,
         "description": t.docs,
         "schema": {
@@ -250,14 +250,19 @@ def test_tool_all_types():
                 "a": {"type": "integer", "default": 0, "description": None},
                 "b": {"type": "number", "default": 0.0, "description": None},
                 "c": {"type": "boolean", "default": False, "description": None},
-                "d": {"type": "string", "default": "", "description": None},
+                "d": {
+                    "type": "string",
+                    "default": None,
+                    "description": None,
+                    "format": "date",
+                },
+                "s": {"type": "string", "default": "", "description": None},
                 "e": {"type": "integer", "default": 10, "description": None},
                 "f": {"type": "number", "default": 1.5, "description": None},
                 "g": {"type": "boolean", "default": True, "description": None},
                 "h": {"type": "string", "default": "hi", "description": None},
             }
         },
-        "contextActions": [],
         "ui": {
             "prefix": t.name,
             "args": {
@@ -265,14 +270,18 @@ def test_tool_all_types():
                 "b": {"prefix": "b"},
                 "c": {"prefix": "c"},
                 "d": {"prefix": "d"},
+                "s": {"prefix": "s"},
                 "e": {"prefix": "e"},
                 "f": {"prefix": "f"},
                 "g": {"prefix": "g"},
                 "h": {"prefix": "h"},
             },
         },
+        "contextActions": [],
         "examples": [],
     }
+
+    assert t.to_info(tb) == expected
 
 
 def test_toolbox_info():
@@ -851,9 +860,10 @@ def test_cast_json_log(caplog):
 
 
 def test_type_to_schema_type_log(caplog):
-    t, d = type_to_schema_type(dict, None)
+    t, d, f = type_to_schema_type(dict, None)
     assert t == "string"
     assert d == ""
+    assert f is None
     assert len(caplog.records) == 1
     log = caplog.records[0]
     assert log.levelname == "WARNING"
@@ -1294,3 +1304,42 @@ async def test_dyn_search_enum_async_handlers():
         (1.0, Operation("ADD", "add"), 2.0),
         (1.0, Operation("ADD", "add"), 2.0),
     ]
+
+
+def test_tool_arg_date():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.tool
+    def add(d: date):
+        return
+
+    t = tb.tools[0]
+
+    assert len(t.args) == 1
+    arg = t.args[0]
+    assert arg.name == "d"
+    assert arg.type == date
+    assert arg.default_value is None
+
+    assert t.to_info(tb) == {
+        "title": "add",
+        "description": None,
+        "schema": {
+            "fields": {
+                "d": {
+                    "type": "string",
+                    "default": None,
+                    "description": None,
+                    "format": "date",
+                },
+            }
+        },
+        "contextActions": [],
+        "ui": {
+            "prefix": t.name,
+            "args": {
+                "d": {"prefix": "d"},
+            },
+        },
+        "examples": [],
+    }

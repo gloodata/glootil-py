@@ -62,7 +62,11 @@ JSON_CASTERS = {
 
 def cast_date_default(v):
     # TODO: handle a way to have dynamic default like "today"
-    return v
+    if is_date(v):
+        return v
+    else:
+        logger.warning("Invalid default date format: %s", v)
+        return None
 
 
 def identity(v):
@@ -135,12 +139,17 @@ class ToolArg(FnArg):
         return f"{self.label}[{self.index}]: {self.type} = {self.default_value}"
 
     def to_schema_info(self):
-        type, default = type_to_schema_type(self.type, self.default_value)
-        return {
+        type, default, format = type_to_schema_type(self.type, self.default_value)
+        info = {
             "type": type,
             "default": default,
             "description": self.docs,
         }
+
+        if format:
+            info["format"] = format
+
+        return info
 
     def to_ui_info(self, toolbox):
         tag_value = toolbox.enum_class_to_wrapper.get(self.type)
@@ -188,6 +197,10 @@ def is_seq(v):
     return isinstance(v, (tuple, list))
 
 
+def is_date(v):
+    return isinstance(v, date)
+
+
 def has_static_method(Class, name):
     f = Class.__dict__.get(name, None)
     return callable(f) and isinstance(f, staticmethod)
@@ -200,17 +213,19 @@ def has_class_method(Class, name):
 
 def type_to_schema_type(t, default):
     if t is float:
-        return "number", default if default is not None else 0.0
+        return "number", default if default is not None else 0.0, None
     elif t is str:
-        return "string", default if default is not None else ""
+        return "string", default if default is not None else "", None
     elif t is bool:
-        return "boolean", default if default is not None else False
+        return "boolean", default if default is not None else False, None
     elif t is int:
-        return "integer", default if default is not None else 0
+        return "integer", default if default is not None else 0, None
+    elif t is date:
+        return "string", default, "date"
     else:
         if not is_any_enum(t):
             logger.warning("unknown type for schema %s, returning string", t)
-        return "string", ""
+        return "string", "", None
 
 
 class FnInfo:
