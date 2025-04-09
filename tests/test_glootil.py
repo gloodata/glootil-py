@@ -516,6 +516,10 @@ def test_provide_arg_str():
     assert tb.provide_arg(arg, {"a": 0}) == "0"
 
 
+def m_enum_dict(key, label, ns, id):
+    return {"type": "enum", "key": key, "label": label, "ns": ns, "id": id}
+
+
 @pytest.mark.asyncio
 async def test_provide_arg_enum():
     tb = Toolbox("mytools", "My Tools", "some tools")
@@ -527,11 +531,19 @@ async def test_provide_arg_enum():
         BLUE = "Blue"
 
     arg = FnArg("a", 0, Color, Color.RED)
-    assert await tb.provide_arg(arg, {}) == Color.RED
-    assert await tb.provide_arg(arg, {"a": "BLUE"}) == Color.BLUE
-    assert await tb.provide_arg(arg, {"a": "Blue"}) == Color.BLUE
-    assert await tb.provide_arg(arg, {"a": "Bl"}) == Color.BLUE
-    assert await tb.provide_arg(arg, {"a": "G"}) == Color.GREEN
+    # it is None because the returned value is an awaitable that returns None
+    # the default is provided in call_with_args
+    assert await maybe_await(tb.provide_arg(arg, {})) is None
+    assert (
+        await maybe_await(
+            tb.provide_arg(arg, {"a": m_enum_dict("BLUE", "Blue", tb.id, "Color")})
+        )
+        == Color.BLUE
+    )
+    assert await maybe_await(tb.provide_arg(arg, {"a": "BLUE"})) == Color.BLUE
+    assert await maybe_await(tb.provide_arg(arg, {"a": "Blue"})) == Color.BLUE
+    assert await maybe_await(tb.provide_arg(arg, {"a": "Bl"})) == Color.BLUE
+    assert await maybe_await(tb.provide_arg(arg, {"a": "G"})) == Color.GREEN
 
 
 @pytest.mark.asyncio
@@ -553,11 +565,19 @@ async def test_provide_arg_dyn_enum():
     BLUE = Color("BLUE", "Blue")
 
     arg = FnArg("a", 0, Color, RED)
-    assert await tb.provide_arg(arg, {}) == RED
-    assert await tb.provide_arg(arg, {"a": "BLUE"}) == BLUE
-    assert await tb.provide_arg(arg, {"a": "Blue"}) == BLUE
-    assert await tb.provide_arg(arg, {"a": "Bl"}) == BLUE
-    assert await tb.provide_arg(arg, {"a": "G"}) == GREEN
+    # it is None because the returned value is an awaitable that returns None
+    # the default is provided in call_with_args
+    assert await maybe_await(tb.provide_arg(arg, {})) is None
+    assert (
+        await maybe_await(
+            tb.provide_arg(arg, {"a": m_enum_dict("BLUE", "Blue", tb.id, "Color")})
+        )
+        == BLUE
+    )
+    assert await maybe_await(tb.provide_arg(arg, {"a": "BLUE"})) == BLUE
+    assert await maybe_await(tb.provide_arg(arg, {"a": "Blue"})) == BLUE
+    assert await maybe_await(tb.provide_arg(arg, {"a": "Bl"})) == BLUE
+    assert await maybe_await(tb.provide_arg(arg, {"a": "G"})) == GREEN
 
 
 def test_provide_arg_optional_str():
@@ -1128,6 +1148,9 @@ async def test_dyn_search_enum():
             ]
             return [(k, v) for k, v in all if query in v]
 
+    ADD = Operation("ADD", "add")
+    SUB = Operation("SUB", "sub")
+
     e = tb.enums[0]
 
     assert tb.handlers[e.search_handler_id] == e.load_handler
@@ -1137,6 +1160,14 @@ async def test_dyn_search_enum():
     }
     assert await e.load_handler(dict(query="x")) == {"entries": []}
     assert await e.match_handler(dict(value="x")) == {"entry": None}
+
+    arg = FnArg("a", 0, Operation, SUB)
+    assert (
+        await maybe_await(
+            tb.provide_arg(arg, {"a": m_enum_dict("ADD", "add", tb.id, "Operation")})
+        )
+        == ADD
+    )
 
 
 def test_match_result_to_response():

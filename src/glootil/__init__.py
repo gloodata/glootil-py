@@ -172,6 +172,22 @@ def is_dyn_enum(t):
     return isinstance(t, type) and issubclass(t, DynEnum)
 
 
+def is_str(v):
+    return isinstance(v, str)
+
+
+def is_dict(v):
+    return isinstance(v, dict)
+
+
+def is_list(v):
+    return isinstance(v, list)
+
+
+def is_seq(v):
+    return isinstance(v, (tuple, list))
+
+
 def has_static_method(Class, name):
     f = Class.__dict__.get(name, None)
     return callable(f) and isinstance(f, staticmethod)
@@ -385,9 +401,9 @@ class ResourceInfo:
 def apply_arg_override(args_by_name, name, info):
     arg = args_by_name.get(name)
     if arg:
-        if isinstance(info, dict):
+        if is_dict(info):
             arg.apply_overrides(info)
-        elif isinstance(info, str):
+        elif is_str(info):
             arg.apply_overrides({"name": info})
         else:
             logger.warning(
@@ -456,18 +472,11 @@ class DynEnum:
 
 
 def is_seq_match_entry(v):
-    return isinstance(v, (tuple, list)) and (
-        len(v) == 2 and isinstance(v[0], str) and isinstance(v[1], str)
-    )
+    return is_seq(v) and (len(v) == 2 and is_str(v[0]) and is_str(v[1]))
 
 
 def is_dict_match_entry(v):
-    return (
-        isinstance(v, dict)
-        and len(v) == 2
-        and isinstance(v["key"], str)
-        and isinstance(v["label"], str)
-    )
+    return is_dict(v) and len(v) == 2 and is_str(v["key"]) and is_str(v["label"])
 
 
 def is_valid_match_entry(v):
@@ -489,7 +498,7 @@ def match_result_to_response(v):
         return {"entry": v}
     elif is_valid_match_entry(v):
         return {"entry": normalize_match_entry(v)}
-    elif isinstance(v, dict):
+    elif is_dict(v):
         entry = v.get("entry")
         if is_valid_match_entry(entry):
             return {"entry": normalize_match_entry(entry)}
@@ -501,22 +510,34 @@ def match_result_to_response(v):
     return {"entry": None}
 
 
-def extract_match_entry_key_and_label_or_none(m):
+def extract_match_entry_key_and_label_or_none(m) -> tuple[str, str] | None:
     if m is None:
         return None
 
-    if isinstance(m, dict) and "entry" in m:
+    if is_dict(m) and "entry" in m:
         entry = m.get("entry")
         if is_seq_match_entry(entry):
             return entry
         elif is_dict_match_entry(entry):
             return entry["key"], entry["label"]
+
     if is_seq_match_entry(m):
         return m
     elif is_dict_match_entry(m):
         return m["key"], m["label"]
 
     return None
+
+
+def extract_key_and_label_from_enum_dict(v) -> tuple[str, str] | None:
+    type = v.get("type")
+    ns = v.get("ns")
+    id = v.get("id")
+    key = v.get("key")
+    label = v.get("label")
+
+    if type == "enum" and is_str(ns) and is_str(id) and is_str(key) and is_str(label):
+        return key, label
 
 
 def normalize_search_result_entries(entries):
@@ -550,9 +571,9 @@ def is_map_search_result_entry(entry):
 
 
 def search_result_to_response(v):
-    if isinstance(v, list):
+    if is_list(v):
         return {"entries": normalize_search_result_entries(v)}
-    elif isinstance(v, dict):
+    elif is_dict(v):
         entries = v.get("entries")
         if isinstance(entries, list):
             return {"entries": normalize_search_result_entries(entries)}
@@ -582,8 +603,25 @@ class TagValue:
             "icon": self.icon,
         }
 
+    def from_key_and_label(self, key, label):
+        logger.warning("TagValue from key and value not implemented: %s %s", key, label)
+        return None
+
     async def from_raw_arg_value(self, v):
-        return await self.match_closest(str(v))
+        t = None
+        if is_str(v):
+            m = await self.match_closest(v)
+            t = extract_match_entry_key_and_label_or_none(m)
+        elif is_dict(v):
+            t = extract_key_and_label_from_enum_dict(v)
+
+        if t:
+            key, label = t
+            return self.from_key_and_label(key, label)
+        else:
+            logger.warning("bad TagValue result format, got: %s", v)
+
+        return None
 
     async def match_handler(self, info):
         value = info.get("value", "")
@@ -687,16 +725,8 @@ class FixedTagValue(TagValue):
         self.EnumClass = EnumClass
         self.variants = variants
 
-    async def from_raw_arg_value(self, v):
-        m = await self.match_closest(str(v))
-        t = extract_match_entry_key_and_label_or_none(m)
-        if t:
-            key, _value = t
-            return self.EnumClass.__members__.get(key)
-        elif m is not None:
-            logger.warning("bad TagValue result format, got: %s", v)
-
-        return None
+    def from_key_and_label(self, key, label):
+        return self.EnumClass.__members__.get(key)
 
     @property
     def match_handler_id(self):
@@ -729,13 +759,8 @@ class DynTagValue(TagValue):
         self.cache = cache
         self._cached_variants = None
 
-    async def from_raw_arg_value(self, v):
-        v = await self.match_closest(str(v))
-        if v:
-            key, value = v
-            return self.EnumClass(key, value)
-
-        return None
+    def from_key_and_label(self, key, label):
+        return self.EnumClass(key, label)
 
     @property
     def match_handler_id(self):
@@ -780,16 +805,8 @@ class DynSearchTagValue(TagValue):
         self.search_fn = search_fn
         self.match_closest_fn = match_closest_fn
 
-    async def from_raw_arg_value(self, v):
-        m = await self.match_closest(str(v))
-        t = extract_match_entry_key_and_label_or_none(m)
-        if t:
-            key, value = t
-            return self.EnumClass(key, value)
-        elif m is not None:
-            logger.warning("bad TagValue result format, got: %s", v)
-
-        return None
+    def from_key_and_label(self, key, label):
+        return self.EnumClass(key, label)
 
     @property
     def match_handler_id(self):
@@ -933,9 +950,11 @@ class Toolbox:
                 wrapper = self.enum_class_to_wrapper.get(t)
                 if wrapper:
                     # NOTE: This call is async and returns an awaitable
+                    # can't always provide default if None because it must be awaited
                     r = wrapper.from_raw_arg_value(v)
                     return r if r is not None else arg.default_value
                 else:
+                    print("!R", arg)
                     logger.warning("enum class argument type not annotated? %s", arg)
                     return arg.default_value
             else:
@@ -1117,7 +1136,7 @@ class Toolbox:
         }
 
     def handle_request(self, body):
-        if not isinstance(body, dict):
+        if not is_dict(body):
             return res_error("BadRequestBody", "Bad Request Body")
 
         action = body.get("action", None)
@@ -1136,6 +1155,7 @@ class Toolbox:
     def handle_action_request(self, op_name, req_info):
         handler = self.handlers.get(op_name)
         if handler:
+            logger.info("handle action request: %s %s", op_name, req_info)
             return handler(req_info)
         else:
             return res_error("ToolNotFound", "Tool Not Found", {"opName": op_name})
