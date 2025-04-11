@@ -1353,3 +1353,31 @@ def test_tool_arg_date():
         },
         "examples": [],
     }
+
+@pytest.mark.asyncio
+async def test_optional_tool_args():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    class Op(Enum):
+        "the operation to apply"
+
+        ADD = "add"
+        SUB = "sub"
+        MUL = "mul"
+        DIV = "div"
+
+    calls = []
+
+    @tb.tool
+    def calculate(a: int | None, op: Op | None, op1: Op = Op.ADD, b: int = 0):
+        calls.append((a, op, op1, b))
+
+    e = tb.enums[0]
+
+    await maybe_await(tb.handle_action_request("calculate", dict(a=1, op="A", op1="S", b=2)))
+    await maybe_await(tb.handle_action_request("calculate", dict(b=2)))
+    await maybe_await(tb.handle_action_request("calculate", dict()))
+
+    assert len(calls) == 3
+    assert calls == [(1, Op.ADD, Op.SUB, 2), (None, None, Op.ADD, 2), (None, None, Op.ADD, 0)]
