@@ -544,6 +544,10 @@ def extract_match_entry_key_and_label_or_none(m) -> tuple[str, str] | None:
     return None
 
 
+def make_enum_dict(ns: str, id: str, key: str, label: str):
+    return {"type": "enum", "ns": ns, "id": id, "key": key, "label": label}
+
+
 def extract_key_and_label_from_enum_dict(v) -> tuple[str, str] | None:
     type = v.get("type")
     ns = v.get("ns")

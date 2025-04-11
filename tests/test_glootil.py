@@ -9,6 +9,7 @@ from glootil import (
     FixedTagValue,
     FnArg,
     NoneType,
+    make_enum_dict,
     search_result_to_response,
     match_result_to_response,
     has_class_method,
@@ -1354,6 +1355,7 @@ def test_tool_arg_date():
         "examples": [],
     }
 
+
 @pytest.mark.asyncio
 async def test_optional_tool_args():
     tb = Toolbox("mytools", "My Tools", "some tools")
@@ -1375,9 +1377,94 @@ async def test_optional_tool_args():
 
     e = tb.enums[0]
 
-    await maybe_await(tb.handle_action_request("calculate", dict(a=1, op="A", op1="S", b=2)))
+    await maybe_await(
+        tb.handle_action_request("calculate", dict(a=1, op="A", op1="S", b=2))
+    )
     await maybe_await(tb.handle_action_request("calculate", dict(b=2)))
     await maybe_await(tb.handle_action_request("calculate", dict()))
 
     assert len(calls) == 3
-    assert calls == [(1, Op.ADD, Op.SUB, 2), (None, None, Op.ADD, 2), (None, None, Op.ADD, 0)]
+    assert calls == [
+        (1, Op.ADD, Op.SUB, 2),
+        (None, None, Op.ADD, 2),
+        (None, None, Op.ADD, 0),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_optional_tool_args_dyn_enum_load():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    class Op(DynEnum):
+        @staticmethod
+        def load():
+            return [("ADD", "add"), ("SUB", "sub"), ("MUL", "mul"), ("DIV", "div")]
+
+    calls = []
+
+    ADD = Op("ADD", "add")
+    SUB = Op("SUB", "sub")
+
+    @tb.tool
+    def calculate(a: int | None, op: Op | None, op1: Op = ADD, b: int = 0):
+        calls.append((a, op, op1, b))
+
+    e = tb.enums[0]
+
+    await maybe_await(
+        tb.handle_action_request("calculate", dict(a=1, op="A", op1="S", b=2))
+    )
+    await maybe_await(tb.handle_action_request("calculate", dict(b=2)))
+    await maybe_await(tb.handle_action_request("calculate", dict()))
+
+    assert len(calls) == 3
+    assert calls == [
+        (1, ADD, SUB, 2),
+        (None, None, ADD, 2),
+        (None, None, ADD, 0),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_optional_tool_args_dyn_enum_search():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    class Op(DynEnum):
+        @staticmethod
+        def search(query: str = ""):
+            all = [
+                ("ADD", "add"),
+                ("SUB", "sub"),
+                ("MUL", "mul"),
+                ("DIV", "div"),
+            ]
+            return [(k, v) for k, v in all if query in v]
+
+    calls = []
+
+    ADD = Op("ADD", "add")
+    SUB = Op("SUB", "sub")
+
+    @tb.tool
+    def calculate(a: int | None, op: Op | None, op1: Op = ADD, b: int = 0):
+        calls.append((a, op, op1, b))
+
+    e = tb.enums[0]
+
+    op_add = make_enum_dict(tb.id, "Op", "ADD", "add")
+    op_sub = make_enum_dict(tb.id, "Op", "SUB", "sub")
+
+    await maybe_await(
+        tb.handle_action_request("calculate", dict(a=1, op=op_add, op1=op_sub, b=2))
+    )
+    await maybe_await(tb.handle_action_request("calculate", dict(b=2)))
+    await maybe_await(tb.handle_action_request("calculate", dict()))
+
+    assert len(calls) == 3
+    assert calls == [
+        (1, ADD, SUB, 2),
+        (None, None, ADD, 2),
+        (None, None, ADD, 0),
+    ]

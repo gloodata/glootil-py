@@ -477,6 +477,7 @@ def show_date(d: date):
     d = d if d else date.today()
     return f"Date: {d}"
 
+
 @tb.enum
 class DateDiffUnit(Enum):
     DAYS = "Days"
@@ -493,7 +494,7 @@ class DateDiffUnit(Enum):
             "docs": "The starting date, default to one week ago from today if not provided",
         },
         "b": {"name": "To", "docs": "The end date, default to today if not provided"},
-        "unit": {"name": "Unit", "docs": "The unit of time to use for the difference"}
+        "unit": {"name": "Unit", "docs": "The unit of time to use for the difference"},
     },
     examples=[
         "days between the moon landing and first barack obama inauguration",
