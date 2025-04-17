@@ -9,6 +9,8 @@ from glootil import (
     FixedTagValue,
     FnArg,
     NoneType,
+    KeyValueEnum,
+    Variant,
     make_enum_dict,
     search_result_to_response,
     match_result_to_response,
@@ -289,7 +291,7 @@ def test_tool_all_types():
             },
         },
         "contextActions": [],
-        "examples": [],
+        "examples": [t.name],
     }
 
     assert t.to_info(tb) == expected
@@ -982,7 +984,6 @@ def test_gen_context_action_for_tool_enum_arg():
         pass
 
     t = tb.tools[0]
-    e = tb.enums[0]
 
     assert len(tb.context_actions_by_type_and_tool) == 0
     cas = t.to_context_actions(tb)
@@ -1016,7 +1017,6 @@ def test_custom_context_action_for_tool_enum_arg():
         return {"name": None, "args": {}}
 
     t = tb.tools[0]
-    e = tb.enums[0]
 
     assert len(tb.context_actions_by_type_and_tool) == 1
     assert len(tb.context_actions_by_type_and_tool[Op]) == 1
@@ -1058,7 +1058,7 @@ async def test_context_action_info_provided():
     op_name = ca["handler"]
     req_value = {"ns": "ns1", "name": "tv1", "id": "foo", "label": "Foo"}
     ra = tb.handle_action_request(op_name, {"value": req_value})
-    r = await maybe_await(ra)
+    _ = await maybe_await(ra)
     assert len(calls) == 1
     s, i = calls[0]
     assert isinstance(s, MyState)
@@ -1198,11 +1198,11 @@ def test_match_result_to_response():
     assert f(1) == {"entry": None}
 
     assert f(("a", 1)) == {"entry": None}
-    assert f((1, "a")) == {"entry": None}
+    assert f((1, "a")) == {"entry": (1, "a")}
     assert f(("A", "a", "other")) == {"entry": None}
 
     assert f(["a", 1]) == {"entry": None}
-    assert f([1, "a"]) == {"entry": None}
+    assert f([1, "a"]) == {"entry": (1, "a")}
     assert f(["A", "a", "other"]) == {"entry": None}
 
     assert f(("a", "A")) == {"entry": ("a", "A")}
@@ -1283,7 +1283,7 @@ async def test_dyn_search_enum_async_handlers():
         calls.append((a, op, b))
         return 0
 
-    t = tb.tools[0]
+    _ = tb.tools[0]
     e = tb.enums[0]
 
     assert tb.handlers[e.search_handler_id] == e.load_handler
@@ -1352,7 +1352,7 @@ def test_tool_arg_date():
                 "d": {"prefix": "d"},
             },
         },
-        "examples": [],
+        "examples": ["add"],
     }
 
 
@@ -1375,7 +1375,7 @@ async def test_optional_tool_args():
     def calculate(a: int | None, op: Op | None, op1: Op = Op.ADD, b: int = 0):
         calls.append((a, op, op1, b))
 
-    e = tb.enums[0]
+    _ = tb.enums[0]
 
     await maybe_await(
         tb.handle_action_request("calculate", dict(a=1, op="A", op1="S", b=2))
@@ -1410,7 +1410,7 @@ async def test_optional_tool_args_dyn_enum_load():
     def calculate(a: int | None, op: Op | None, op1: Op = ADD, b: int = 0):
         calls.append((a, op, op1, b))
 
-    e = tb.enums[0]
+    _ = tb.enums[0]
 
     await maybe_await(
         tb.handle_action_request("calculate", dict(a=1, op="A", op1="S", b=2))
@@ -1451,7 +1451,7 @@ async def test_optional_tool_args_dyn_enum_search():
     def calculate(a: int | None, op: Op | None, op1: Op = ADD, b: int = 0):
         calls.append((a, op, op1, b))
 
-    e = tb.enums[0]
+    _ = tb.enums[0]
 
     op_add = make_enum_dict(tb.id, "Op", "ADD", "add")
     op_sub = make_enum_dict(tb.id, "Op", "SUB", "sub")
@@ -1467,4 +1467,80 @@ async def test_optional_tool_args_dyn_enum_search():
         (1, ADD, SUB, 2),
         (None, None, ADD, 2),
         (None, None, ADD, 0),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_key_value_enum():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    class Op(KeyValueEnum):
+        ADD = ("+", "add")
+        SUB = ("-", "sub")
+        MUL = ("*", "mul")
+        DIV = ("/", "div")
+
+    assert Op.ADD.name == "ADD"
+    assert Op.ADD.key == "+"
+    assert Op.ADD.value == "add"
+
+    v = Variant.from_enum_variant(Op.ADD)
+    assert v.name == "+"
+    assert v.value == "add"
+    assert v.enum_value == Op.ADD
+    assert v.docs is None
+
+    e = tb.enums[0]
+
+    assert len(e.variants) == 4
+    assert e.variants[0] == e.variants_by_key["+"]
+    assert await e.from_raw_arg_value("+") == Op.ADD
+    assert await e.from_raw_arg_value("add") == Op.ADD
+    assert await e.from_raw_arg_value("-") == Op.SUB
+    assert await e.from_raw_arg_value("sub") == Op.SUB
+    assert await e.from_raw_arg_value("*") == Op.MUL
+    assert await e.from_raw_arg_value("/") == Op.DIV
+    assert await e.from_raw_arg_value("!") == Op.ADD
+
+
+@pytest.mark.asyncio
+async def test_key_value_enum_tool_arg():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    class Op(KeyValueEnum):
+        ADD = ("+", "add")
+        SUB = ("-", "sub")
+        MUL = ("*", "mul")
+        DIV = ("/", "div")
+
+    calls = []
+
+    @tb.tool
+    def calculate(a: int | None, op: Op | None, op1: Op = Op.ADD, b: int = 0):
+        calls.append((a, op, op1, b))
+
+    e = tb.enums[0]
+
+    assert e.variants[0].name == "+"
+    assert e.variants[0].value == "add"
+
+    op_add = make_enum_dict(tb.id, "Op", "+", "add")
+    op_sub = make_enum_dict(tb.id, "Op", "-", "sub")
+    op_mul = make_enum_dict(tb.id, "Op", "*", "mul")
+
+    await maybe_await(
+        tb.handle_action_request("calculate", dict(a=1, op=op_add, op1=op_sub, b=2))
+    )
+    await maybe_await(tb.handle_action_request("calculate", dict(b=2)))
+    await maybe_await(tb.handle_action_request("calculate", dict()))
+    await maybe_await(tb.handle_action_request("calculate", dict(op1=op_mul)))
+
+    assert len(calls) == 4
+    assert calls == [
+        (1, Op.ADD, Op.SUB, 2),
+        (None, None, Op.ADD, 2),
+        (None, None, Op.ADD, 0),
+        (None, None, Op.MUL, 0),
     ]

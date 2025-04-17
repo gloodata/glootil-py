@@ -2,12 +2,26 @@ import os
 import inspect
 import logging
 import typing
+import contextlib
 import mimetypes
+
 from datetime import date
 from difflib import SequenceMatcher
 from enum import Enum
 
 from typing import BinaryIO
+
+import uvicorn
+
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import (
+    JSONResponse,
+    Response,
+    FileResponse,
+    StreamingResponse,
+)
+
 
 logger = logging.getLogger("glootil")
 
@@ -185,6 +199,10 @@ def is_str(v):
     return isinstance(v, str)
 
 
+def is_int(v):
+    return isinstance(v, int)
+
+
 def is_dict(v):
     return isinstance(v, dict)
 
@@ -334,7 +352,7 @@ class Tool(FnInfo):
                 "args": {arg.name: arg.to_ui_info(toolbox) for arg in args},
             },
             "contextActions": self.to_context_actions(toolbox),
-            "examples": self.examples,
+            "examples": self.examples or [self.name],
         }
 
     def apply_overrides(self, d):
@@ -473,25 +491,80 @@ def to_list_of_pairs(seq):
     return list(to_seq_of_pairs(seq))
 
 
-class DynEnum:
-    def __init__(self, key, label):
-        self.key = key
-        self.label = label
+class KeyValue:
+    def __repr__(self):
+        return f"KeyValue({self.name}, {self.key}, {self.value})"
+
+    def __str__(self):
+        return self.key
 
     def __eq__(self, other):
-        return other and self.key == other.key and self.label == other.label
+        return (
+            other
+            and isinstance(other, KeyValue)
+            and self.name == other.name
+            and self.value == other.value
+        )
 
-    @staticmethod
-    def load():
-        return []
+
+class KeyValueEnum(KeyValue, Enum):
+    def __new__(cls, key, value):
+        obj = object.__new__(cls)
+        obj._value_ = value
+        obj.key = key
+        return obj
+
+
+class DynEnum:
+    def __init__(self, id, name):
+        self.id = id
+        self.name = name
+
+    @property
+    def key(self):
+        logger.warning("accessing deprecated property key in %s", repr(self))
+        return self.id
+
+    @property
+    def label(self):
+        logger.warning("accessing deprecated property label in %s", repr(self))
+        return self.name
+
+    def __repr__(self):
+        return f"DynEnum({self.id}, {self.name})"
+
+    def __str__(self):
+        return self.id
+
+    def __eq__(self, other):
+        return other and self.id == other.id and self.name == other.name
+
+
+def is_valid_key_label(key, label):
+    return (is_str(key) or is_int(key)) and is_str(label)
 
 
 def is_seq_match_entry(v):
-    return is_seq(v) and (len(v) == 2 and is_str(v[0]) and is_str(v[1]))
+    if is_seq(v) and len(v) == 2:
+        key, label = v
+        return is_valid_key_label(key, label)
+
+
+def get_dict_match_entry_key(v):
+    return v.get("key") or v.get("id")
+
+
+def get_dict_match_entry_label(v):
+    return v.get("label") or v.get("name") or v.get("title")
 
 
 def is_dict_match_entry(v):
-    return is_dict(v) and len(v) == 2 and is_str(v["key"]) and is_str(v["label"])
+    if is_dict(v):
+        key = get_dict_match_entry_key(v)
+        label = get_dict_match_entry_label(v)
+        return is_valid_key_label(key, label)
+
+    return False
 
 
 def is_valid_match_entry(v):
@@ -503,7 +576,9 @@ def normalize_match_entry(entry):
         k, v = entry
         return (k, v)
     elif is_dict_match_entry(entry):
-        return (entry["key"], entry["label"])
+        key = get_dict_match_entry_key(entry)
+        label = get_dict_match_entry_label(entry)
+        return (key, label)
     else:
         raise ValueError("Invalid match entry format")
 
@@ -534,12 +609,16 @@ def extract_match_entry_key_and_label_or_none(m) -> tuple[str, str] | None:
         if is_seq_match_entry(entry):
             return entry
         elif is_dict_match_entry(entry):
-            return entry["key"], entry["label"]
+            key = get_dict_match_entry_key(entry)
+            label = get_dict_match_entry_label(entry)
+            return key, label
 
     if is_seq_match_entry(m):
         return m
     elif is_dict_match_entry(m):
-        return m["key"], m["label"]
+        key = get_dict_match_entry_key(m)
+        label = get_dict_match_entry_label(m)
+        return key, label
 
     return None
 
@@ -555,7 +634,7 @@ def extract_key_and_label_from_enum_dict(v) -> tuple[str, str] | None:
     key = v.get("key")
     label = v.get("label")
 
-    if type == "enum" and is_str(ns) and is_str(id) and is_str(key) and is_str(label):
+    if type == "enum" and is_str(ns) and is_str(id) and is_valid_key_label(key, label):
         return key, label
 
 
@@ -570,9 +649,11 @@ def normalize_search_result_entries(entries):
 def normalize_search_result_entry(entry):
     if is_seq_search_result_entry(entry):
         k, v = entry
-        return (k, v)
+        return k, v
     elif is_map_search_result_entry(entry):
-        return (entry["key"], entry["label"])
+        key = get_dict_match_entry_key(entry)
+        label = get_dict_match_entry_label(entry)
+        return key, label
     else:
         raise ValueError("Invalid search result entry format")
 
@@ -611,8 +692,11 @@ class TagValue:
         self.icon = icon
         self.closest_matcher = basic_match_raw_tag_value
 
-    def __str__(self):
+    def __repr__(self):
         return f"TagValue({self.id}, {self.name}, {self.docs})"
+
+    def __str__(self):
+        return self.id
 
     def to_info(self, _toolbox):
         return {
@@ -637,7 +721,7 @@ class TagValue:
         if t:
             key, label = t
             return self.from_key_and_label(key, label)
-        else:
+        elif t is not None:
             logger.warning("bad TagValue result format, got: %s", v)
 
         return None
@@ -738,14 +822,30 @@ class TagValue:
             raise ValueError("DynEnum must have either a load or a search classmethod")
 
 
+def make_match_closest_from_search(search_fn):
+    async def match_closest(value: str = ""):
+        rows = await maybe_await(search_fn(value))
+        if rows and len(rows) > 0:
+            return rows[0]
+        else:
+            return None
+
+    return match_closest
+
+
 class FixedTagValue(TagValue):
     def __init__(self, id, name, docs, variants, EnumClass):
         super().__init__(id, name, docs)
         self.EnumClass = EnumClass
         self.variants = variants
+        self.variants_by_key = {v.name: v for v in variants}
 
     def from_key_and_label(self, key, label):
-        return self.EnumClass.__members__.get(key)
+        v = self.variants_by_key.get(key)
+        if v:
+            return v.enum_value
+
+        return
 
     @property
     def match_handler_id(self):
@@ -843,7 +943,14 @@ class DynSearchTagValue(TagValue):
         return await maybe_await(self.search_fn(info))
 
     async def match_closest(self, word):
-        return await maybe_await(self.match_closest_fn({"value": word}))
+        r = await maybe_await(self.match_closest_fn({"value": word}))
+        if is_list(r):
+            if len(r) > 0:
+                return r[0]
+            else:
+                return None
+        else:
+            return r
 
     def get_handlers(self):
         return [
@@ -863,9 +970,10 @@ class DynSearchTagValue(TagValue):
 
 
 class Variant:
-    def __init__(self, name, value, docs=None):
+    def __init__(self, name, value, enum_value, docs=None):
         self.name = name
         self.value = value
+        self.enum_value = enum_value
         self.docs = docs
 
     def __str__(self):
@@ -877,11 +985,15 @@ class Variant:
 
     @classmethod
     def from_enum_variant(cls, variant):
-        name = variant.name
+        if isinstance(variant, KeyValue):
+            name = variant.key
+        else:
+            name = variant.name
+
         value = variant.value
         docs = None
 
-        return cls(name, value, docs)
+        return cls(name, value, variant, docs)
 
 
 class EmptyState:
@@ -973,7 +1085,6 @@ class Toolbox:
                     r = wrapper.from_raw_arg_value(v)
                     return r if r is not None else arg.default_value
                 else:
-                    print("!R", arg)
                     logger.warning("enum class argument type not annotated? %s", arg)
                     return arg.default_value
             else:
@@ -985,6 +1096,13 @@ class Toolbox:
                 await self.state.setup()
             else:
                 self.state.setup()
+
+    async def dispose(self):
+        if hasattr(self.state, "dispose"):
+            if inspect.iscoroutinefunction(self.state.dispose):
+                await self.state.dispose()
+            else:
+                self.state.dispose()
 
     def handler_id_for_task(self, fn):
         task = self._raw_task_to_task.get(fn)
@@ -1050,7 +1168,6 @@ class Toolbox:
 
         def handler(raw_info):
             ca_info = ContextActionInfo.from_raw_info(raw_info)
-            print("context action handler", ca_info, raw_info)
             return cah.call_with_args(self, {"info": ca_info})
 
         self.add_handler(cah.handler_id, handler)
@@ -1190,16 +1307,36 @@ class Toolbox:
             return Response(status_code=404, content="Resource not found")
 
     def to_fastapi_app(self):
-        return toolbox_to_fastapi(self)
+        tb = self
+
+        @contextlib.asynccontextmanager
+        async def lifespan(app: FastAPI):
+            await tb.setup()
+            yield
+            await tb.dispose()
+
+        app = FastAPI(lifespan=lifespan)
+
+        @app.post("/")
+        async def root_gd_handler(request: Request):
+            body = await request.json()
+            res = await maybe_await(tb.handle_request(body))
+            return handler_response_to_fastapi_response(
+                res, jsonable_encoder, JSONResponse
+            )
+
+        @app.get("/resource/{res_type}/{res_id}")
+        async def resource_handler(request: Request, res_type: str, res_id: str):
+            res = tb.handle_resource_request(request, res_type, res_id)
+            if res is None:
+                return Response(status_code=404, content="Resource not found")
+            else:
+                return await maybe_await(res)
+
+        return app
 
     def serve(self, host="127.0.0.1", port=8086):
-        import uvicorn
-
         app = self.to_fastapi_app()
-
-        @app.on_event("startup")
-        async def setup():
-            await self.setup()
 
         return uvicorn.run(app, host=host, port=port)
 
@@ -1253,15 +1390,6 @@ def get_mime_type(file_path):
 
 # fastapi utils
 
-from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
-from fastapi.responses import (
-    JSONResponse,
-    Response,
-    FileResponse,
-    StreamingResponse,
-)
-
 
 def serve_static_file(file_path, request):
     try:
@@ -1296,8 +1424,6 @@ def serve_static_file(file_path, request):
             "Accept-Ranges": "bytes",
         }
 
-        print("serving range", headers, file_path)
-
         return StreamingResponse(
             send_bytes_range_requests(open(file_path, mode="rb"), start, end),
             status_code=206,
@@ -1315,24 +1441,3 @@ def handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse):
         logger.warning("Error encoding response: %s (%s)", err, res)
         err_res = res_error("InternalError", "Internal Error", {})
         return JSONResponse(content=jsonable_encoder(err_res), status_code=500)
-
-
-def toolbox_to_fastapi(tb):
-    app = FastAPI()
-
-    @app.post("/")
-    async def root_gd_handler(request: Request):
-        body = await request.json()
-        res = await maybe_await(tb.handle_request(body))
-        return handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse)
-
-    @app.get("/resource/{res_type}/{res_id}")
-    async def resource_handler(request: Request, res_type: str, res_id: str):
-        print("handling resource", res_type, res_id)
-        res = tb.handle_resource_request(request, res_type, res_id)
-        if res is None:
-            return Response(status_code=404, content="Resource not found")
-        else:
-            return await maybe_await(res)
-
-    return app
