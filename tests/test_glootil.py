@@ -290,6 +290,7 @@ def test_tool_all_types():
                 "h": {"prefix": "h"},
             },
         },
+        "manualUpdate": False,
         "contextActions": [],
         "examples": [t.name],
     }
@@ -345,7 +346,6 @@ def test_toolbox_info():
                         "h": {"type": "string", "default": "hi", "description": None},
                     }
                 },
-                "contextActions": [],
                 "ui": {
                     "prefix": t.name,
                     "args": {
@@ -359,6 +359,8 @@ def test_toolbox_info():
                         "h": {"prefix": "h"},
                     },
                 },
+                "manualUpdate": False,
+                "contextActions": [],
                 "examples": ["Show all types"],
             }
         },
@@ -1345,13 +1347,14 @@ def test_tool_arg_date():
                 },
             }
         },
-        "contextActions": [],
         "ui": {
             "prefix": t.name,
             "args": {
                 "d": {"prefix": "d"},
             },
         },
+        "manualUpdate": False,
+        "contextActions": [],
         "examples": ["add"],
     }
 

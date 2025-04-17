@@ -322,6 +322,7 @@ class Tool(FnInfo):
         self.id = name
         self.examples = examples if examples is not None else []
         self.ui_prefix = name
+        self.manual_update = False
 
     @property
     def handler_id(self):
@@ -351,6 +352,7 @@ class Tool(FnInfo):
                 "prefix": self.ui_prefix,
                 "args": {arg.name: arg.to_ui_info(toolbox) for arg in args},
             },
+            "manualUpdate": self.manual_update,
             "contextActions": self.to_context_actions(toolbox),
             "examples": self.examples or [self.name],
         }
@@ -362,6 +364,7 @@ class Tool(FnInfo):
         args = d.get("args")
         examples = d.get("examples")
         ui_prefix = d.get("ui_prefix")
+        manual_update = d.get("manual_update")
 
         if id:
             self.id = id
@@ -384,6 +387,9 @@ class Tool(FnInfo):
             self.ui_prefix = ui_prefix
         elif self.ui_prefix == self.id:
             self.ui_prefix = self.name
+
+        if manual_update is not None:
+            self.manual_update = manual_update
 
 
 class Task(FnInfo):
