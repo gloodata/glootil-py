@@ -154,10 +154,16 @@ class ToolArg(FnArg):
 
     def to_schema_info(self):
         type, default, format = type_to_schema_type(self.type, self.default_value)
+
+        if not self.docs and is_any_enum(self.type):
+            desc = self.type.__doc__
+        else:
+            desc = self.docs
+
         info = {
             "type": type,
             "default": default,
-            "description": self.docs,
+            "description": desc,
         }
 
         if format:
@@ -351,8 +357,8 @@ class Tool(FnInfo):
             "ui": {
                 "prefix": self.ui_prefix,
                 "args": {arg.name: arg.to_ui_info(toolbox) for arg in args},
+                "manualUpdate": self.manual_update,
             },
-            "manualUpdate": self.manual_update,
             "contextActions": self.to_context_actions(toolbox),
             "examples": self.examples or [self.name],
         }

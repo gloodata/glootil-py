@@ -289,8 +289,8 @@ def test_tool_all_types():
                 "g": {"prefix": "g"},
                 "h": {"prefix": "h"},
             },
+            "manualUpdate": False,
         },
-        "manualUpdate": False,
         "contextActions": [],
         "examples": [t.name],
     }
@@ -301,7 +301,7 @@ def test_tool_all_types():
 def test_toolbox_info():
     tb = Toolbox("mytools", "My Tools", "some tools")
 
-    @tb.tool(examples=["Show all types"])
+    @tb.tool(examples=["Show all types"], manual_update=True)
     def all_types(
         a: int,
         b: float,
@@ -358,8 +358,8 @@ def test_toolbox_info():
                         "g": {"prefix": "g"},
                         "h": {"prefix": "h"},
                     },
+                    "manualUpdate": True,
                 },
-                "manualUpdate": False,
                 "contextActions": [],
                 "examples": ["Show all types"],
             }
@@ -1352,8 +1352,8 @@ def test_tool_arg_date():
             "args": {
                 "d": {"prefix": "d"},
             },
+            "manualUpdate": False,
         },
-        "manualUpdate": False,
         "contextActions": [],
         "examples": ["add"],
     }
@@ -1547,3 +1547,26 @@ async def test_key_value_enum_tool_arg():
         (None, None, Op.ADD, 0),
         (None, None, Op.MUL, 0),
     ]
+
+
+def test_info_tool_arg_description_is_enum_doc_if_not_set():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    class Op(Enum):
+        "the operation to apply"
+
+        ADD = "add"
+        SUB = "sub"
+        MUL = "mul"
+        DIV = "div"
+
+    @tb.tool
+    def my_tool(e: Op = Op.ADD):
+        pass
+
+    t = tb.tools[0]
+    assert (
+        t.to_info(tb).get("schema").get("fields").get("e").get("description")
+        == "the operation to apply"
+    )
