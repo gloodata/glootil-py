@@ -500,8 +500,7 @@ class KeyValue:
 
     def __eq__(self, other):
         return (
-            other
-            and isinstance(other, KeyValue)
+            isinstance(other, KeyValue)
             and self.name == other.name
             and self.value == other.value
         )
@@ -516,28 +515,32 @@ class KeyValueEnum(KeyValue, Enum):
 
 
 class DynEnum:
-    def __init__(self, id, name):
-        self.id = id
+    def __init__(self, name, value):
         self.name = name
+        self.value = value
 
     @property
     def key(self):
         logger.warning("accessing deprecated property key in %s", repr(self))
-        return self.id
+        return self.name
 
     @property
     def label(self):
         logger.warning("accessing deprecated property label in %s", repr(self))
-        return self.name
+        return self.value
 
     def __repr__(self):
-        return f"DynEnum({self.id}, {self.name})"
+        return f"DynEnum({self.name}, {self.value})"
 
     def __str__(self):
-        return self.id
+        return self.name
 
     def __eq__(self, other):
-        return other and self.id == other.id and self.name == other.name
+        return (
+            isinstance(other, self.__class__)
+            and self.name == other.name
+            and self.value == other.value
+        )
 
 
 def is_valid_key_label(key, label):
