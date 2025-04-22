@@ -11,6 +11,8 @@ from glootil import (
     NoneType,
     KeyValueEnum,
     Variant,
+    format_enum_data_tag,
+    format_data_tag,
     make_enum_dict,
     search_result_to_response,
     match_result_to_response,
@@ -1570,3 +1572,38 @@ def test_info_tool_arg_description_is_enum_doc_if_not_set():
         t.to_info(tb).get("schema").get("fields").get("e").get("description")
         == "the operation to apply"
     )
+
+
+def test_enum_to_data_tag():
+    ns = "mytools"
+    tb = Toolbox(ns, "My Tools", "some tools")
+
+    @tb.enum
+    class Op(Enum):
+        "the operation to apply"
+
+        ADD = "add"
+        SUB = "sub"
+        MUL = "mul"
+        DIV = "div"
+
+    assert Op.ADD.to_data_tag() == format_enum_data_tag(ns, Op, Op.ADD)
+
+
+def test_dyn_enum_to_data_tag():
+    ns = "mytools"
+    tb = Toolbox(ns, "My Tools", "some tools")
+
+    @tb.enum
+    class Color(DynEnum):
+        @staticmethod
+        def load():
+            return [
+                ("RED", "Red"),
+                ("GREEN", "Green"),
+                ("BLUE", "Blue"),
+            ]
+
+    RED = Color("RED", "Red")
+
+    assert RED.to_data_tag() == format_data_tag(ns, "Color", "RED", "Red")

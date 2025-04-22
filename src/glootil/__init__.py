@@ -107,6 +107,10 @@ def cast_json_type_to_fn_arg_type_or_default(v, target_type, default):
         return default
 
 
+def date_to_data_tag(d):
+    return ["dt", d] if d else None
+
+
 class FnArg:
     def __init__(self, name, index, type_, default_value):
         self.name = name
@@ -837,6 +841,21 @@ class TagValue:
             raise ValueError("DynEnum must have either a load or a search classmethod")
 
 
+def format_enum_data_tag(ns: str, enum_cls: type, variant):
+    return format_data_tag(ns, enum_cls.__name__, variant.name, variant.value)
+
+
+def format_data_tag(ns: str, id: str, key, value):
+    return ["tv", [ns, id, key, value]]
+
+
+def add_enum_utility_methods(Class, ns):
+    def to_data_tag(self):
+        return format_data_tag(ns, Class.__name__, self.name, self.value)
+
+    setattr(Class, "to_data_tag", to_data_tag)
+
+
 def make_match_closest_from_search(search_fn):
     async def match_closest(value: str = ""):
         rows = await maybe_await(search_fn(value))
@@ -1200,6 +1219,8 @@ class Toolbox:
                     "The decorated class must inherit from enum.Enum or DynEnum"
                 )
 
+            add_enum_utility_methods(arg, self.id)
+
             return arg
         else:
 
@@ -1212,6 +1233,8 @@ class Toolbox:
                     raise TypeError(
                         "The decorated class must inherit from enum.Enum or DynEnum"
                     )
+
+                add_enum_utility_methods(arg, self.id)
 
                 return arg
 
