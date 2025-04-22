@@ -732,7 +732,7 @@ class TagValue:
     async def from_raw_arg_value(self, v):
         t = None
         if is_str(v):
-            m = await self.match_closest(v)
+            m = await self.find_best_match(v)
             t = extract_match_entry_key_and_label_or_none(m)
         elif is_dict(v):
             t = extract_key_and_label_from_enum_dict(v)
@@ -747,13 +747,13 @@ class TagValue:
 
     async def match_handler(self, info):
         value = info.get("value", "")
-        return await self.match_closest(value)
+        return await self.find_best_match(value)
 
     async def load_handler(self, _info):
         entries = to_list_of_pairs(await self.get_variants())
         return dict(entries=entries)
 
-    async def match_closest(self, word):
+    async def find_best_match(self, word):
         variant_pairs = to_seq_of_pairs(await self.get_variants())
         _, pair = self.closest_matcher(word, variant_pairs)
         return pair
@@ -818,22 +818,22 @@ class TagValue:
             return e
         elif has_static_method(Class, "search"):
             search_fn_info = FnInfo.from_function(Class.search)
-            if has_static_method(Class, "match_closest"):
-                match_closest_fn_info = FnInfo.from_function(Class.match_closest)
+            if has_static_method(Class, "find_best_match"):
+                find_best_match_fn_info = FnInfo.from_function(Class.find_best_match)
             else:
-                match_closest_fn_info = FnInfo.from_function(lambda: None)
+                find_best_match_fn_info = FnInfo.from_function(lambda: None)
 
             def search_fn(info):
                 return search_fn_info.call_with_args(
                     fn_arg_provider, info, result_mapper=search_result_to_response
                 )
 
-            def match_closest_fn(info):
-                return match_closest_fn_info.call_with_args(
+            def find_best_match_fn(info):
+                return find_best_match_fn_info.call_with_args(
                     fn_arg_provider, info, result_mapper=match_result_to_response
                 )
 
-            e = DynSearchTagValue(id, name, docs, Class, search_fn, match_closest_fn)
+            e = DynSearchTagValue(id, name, docs, Class, search_fn, find_best_match_fn)
             e.apply_overrides(overrides)
 
             return e
@@ -856,15 +856,15 @@ def add_enum_utility_methods(Class, ns):
     setattr(Class, "to_data_tag", to_data_tag)
 
 
-def make_match_closest_from_search(search_fn):
-    async def match_closest(value: str = ""):
+def make_find_best_match_from_search(search_fn):
+    async def find_best_match(value: str = ""):
         rows = await maybe_await(search_fn(value))
         if rows and len(rows) > 0:
             return rows[0]
         else:
             return None
 
-    return match_closest
+    return find_best_match
 
 
 class FixedTagValue(TagValue):
@@ -952,11 +952,11 @@ class DynTagValue(TagValue):
 
 
 class DynSearchTagValue(TagValue):
-    def __init__(self, id, name, docs, EnumClass, search_fn, match_closest_fn):
+    def __init__(self, id, name, docs, EnumClass, search_fn, find_best_match_fn):
         super().__init__(id, name, docs)
         self.EnumClass = EnumClass
         self.search_fn = search_fn
-        self.match_closest_fn = match_closest_fn
+        self.find_best_match_fn = find_best_match_fn
 
     def from_key_and_label(self, key, label):
         return self.EnumClass(key, label)
@@ -976,8 +976,8 @@ class DynSearchTagValue(TagValue):
     async def load_handler(self, info):
         return await maybe_await(self.search_fn(info))
 
-    async def match_closest(self, word):
-        r = await maybe_await(self.match_closest_fn({"value": word}))
+    async def find_best_match(self, word):
+        r = await maybe_await(self.find_best_match_fn({"value": word}))
         if is_list(r):
             if len(r) > 0:
                 return r[0]

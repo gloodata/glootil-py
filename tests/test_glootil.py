@@ -420,8 +420,8 @@ async def test_enum_class_default_matcher():
 
     e = tb.enums[0]
 
-    assert await e.match_closest("ad") == ("ADD", "add")
-    assert await e.match_closest("mu") == ("MUL", "mul")
+    assert await e.find_best_match("ad") == ("ADD", "add")
+    assert await e.find_best_match("mu") == ("MUL", "mul")
 
 
 @pytest.mark.asyncio
@@ -443,8 +443,8 @@ async def test_enum_class_custom_matcher():
     e = tb.enums[0]
 
     assert e.closest_matcher == matcher_always_first
-    assert await e.match_closest("") == ("ADD", "add")
-    assert await e.match_closest("mul") == ("ADD", "add")
+    assert await e.find_best_match("") == ("ADD", "add")
+    assert await e.find_best_match("mul") == ("ADD", "add")
 
 
 @pytest.mark.asyncio
@@ -714,9 +714,9 @@ async def test_fn_enum_default_matcher():
 
     e = tb.enums[0]
 
-    assert await e.match_closest("1") == ("01", "January")
-    assert await e.match_closest("2") == ("02", "February")
-    assert await e.match_closest("may") == ("05", "May")
+    assert await e.find_best_match("1") == ("01", "January")
+    assert await e.find_best_match("2") == ("02", "February")
+    assert await e.find_best_match("may") == ("05", "May")
 
 
 @pytest.mark.asyncio
@@ -735,9 +735,9 @@ async def test_fn_enum_custom_matcher():
     e = tb.enums[0]
 
     assert e.closest_matcher == matcher_always_first
-    assert await e.match_closest("") == ("01", "January")
-    assert await e.match_closest("02") == ("01", "January")
-    assert await e.match_closest("May") == ("01", "January")
+    assert await e.find_best_match("") == ("01", "January")
+    assert await e.find_best_match("02") == ("01", "January")
+    assert await e.find_best_match("May") == ("01", "January")
 
 
 @pytest.mark.asyncio
@@ -1237,7 +1237,7 @@ async def test_dyn_search_enum_custom_match():
             return [(k, v) for k, v in all if query in v]
 
         @staticmethod
-        def match_closest(value: str = ""):
+        def find_best_match(value: str = ""):
             for key, val in all:
                 if value in val:
                     return (key, val)
@@ -1270,7 +1270,7 @@ async def test_dyn_search_enum_async_handlers():
             return [(k, v) for k, v in all if query in v]
 
         @staticmethod
-        async def match_closest(value: str = ""):
+        async def find_best_match(value: str = ""):
             await asyncio.sleep(0.010)
             for key, val in all:
                 if value in key or value in val:
