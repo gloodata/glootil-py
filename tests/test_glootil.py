@@ -503,7 +503,7 @@ async def test_enum_class_match_handler():
     e = tb.enums[0]
 
     assert tb.handlers[e.match_handler_id] == e.match_handler
-    match_result = await e.match_handler(dict(value="ad"))
+    match_result = await e.match_handler(dict(query="ad"))
     assert match_result == ("ADD", "add")
 
 
@@ -805,7 +805,7 @@ async def test_dyn_enum_match_handler():
     e = tb.enums[0]
 
     assert tb.handlers[e.match_handler_id] == e.match_handler
-    match_result = await e.match_handler(dict(value="ad"))
+    match_result = await e.match_handler(dict(query="ad"))
     assert match_result == ("ADD", "add")
 
 
@@ -1237,18 +1237,18 @@ async def test_dyn_search_enum_custom_match():
             return [(k, v) for k, v in all if query in v]
 
         @staticmethod
-        def find_best_match(value: str = ""):
+        def find_best_match(query: str = ""):
             for key, val in all:
-                if value in val:
+                if query in val:
                     return (key, val)
             return None
 
     e = tb.enums[0]
 
     assert tb.handlers[e.match_handler_id] == e.match_handler
-    assert await e.match_handler(dict(value="a")) == {"entry": ("ADD", "add")}
-    assert await e.match_handler(dict(value="u")) == {"entry": ("SUB", "sub")}
-    assert await e.match_handler(dict(value="x")) == {"entry": None}
+    assert await e.match_handler(dict(query="a")) == {"entry": ("ADD", "add")}
+    assert await e.match_handler(dict(query="u")) == {"entry": ("SUB", "sub")}
+    assert await e.match_handler(dict(query="x")) == {"entry": None}
 
 
 @pytest.mark.asyncio
@@ -1270,10 +1270,10 @@ async def test_dyn_search_enum_async_handlers():
             return [(k, v) for k, v in all if query in v]
 
         @staticmethod
-        async def find_best_match(value: str = ""):
+        async def find_best_match(query: str = ""):
             await asyncio.sleep(0.010)
             for key, val in all:
-                if value in key or value in val:
+                if query in key or query in val:
                     return (key, val)
             return None
 
@@ -1298,9 +1298,9 @@ async def test_dyn_search_enum_async_handlers():
     assert await e.load_handler(dict(query="x")) == {"entries": []}
 
     assert tb.handlers[e.match_handler_id] == e.match_handler
-    assert await e.match_handler(dict(value="a")) == {"entry": ("ADD", "add")}
-    assert await e.match_handler(dict(value="u")) == {"entry": ("SUB", "sub")}
-    assert await e.match_handler(dict(value="x")) == {"entry": None}
+    assert await e.match_handler(dict(query="a")) == {"entry": ("ADD", "add")}
+    assert await e.match_handler(dict(query="u")) == {"entry": ("SUB", "sub")}
+    assert await e.match_handler(dict(query="x")) == {"entry": None}
 
     await maybe_await(
         tb.handle_action_request("calculate", dict(a=1.0, op="ADD", b=2.0))

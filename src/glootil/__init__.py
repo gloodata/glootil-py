@@ -746,16 +746,16 @@ class TagValue:
         return None
 
     async def match_handler(self, info):
-        value = info.get("value", "")
-        return await self.find_best_match(value)
+        query = info.get("query", "")
+        return await self.find_best_match(query)
 
     async def load_handler(self, _info):
         entries = to_list_of_pairs(await self.get_variants())
         return dict(entries=entries)
 
-    async def find_best_match(self, word):
+    async def find_best_match(self, query):
         variant_pairs = to_seq_of_pairs(await self.get_variants())
-        _, pair = self.closest_matcher(word, variant_pairs)
+        _, pair = self.closest_matcher(query, variant_pairs)
         return pair
 
     async def get_variants(self):
@@ -857,8 +857,8 @@ def add_enum_utility_methods(Class, ns):
 
 
 def make_find_best_match_from_search(search_fn):
-    async def find_best_match(value: str = ""):
-        rows = await maybe_await(search_fn(value))
+    async def find_best_match(query: str = ""):
+        rows = await maybe_await(search_fn(query))
         if rows and len(rows) > 0:
             return rows[0]
         else:
@@ -976,8 +976,8 @@ class DynSearchTagValue(TagValue):
     async def load_handler(self, info):
         return await maybe_await(self.search_fn(info))
 
-    async def find_best_match(self, word):
-        r = await maybe_await(self.find_best_match_fn({"value": word}))
+    async def find_best_match(self, query):
+        r = await maybe_await(self.find_best_match_fn({"query": query}))
         if is_list(r):
             if len(r) > 0:
                 return r[0]
