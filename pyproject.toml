@@ -3,7 +3,7 @@ target-version = "py310"
 
 [project]
 name = "glootil"
-version = "0.1.6"
+version = "0.1.7"
 description = "Library to build Gloodata extensions"
 authors = [{ name = "Mariano Guerra", email = "mariano@gloodata.com" }]
 readme = "README.md"
