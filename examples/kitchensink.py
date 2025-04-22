@@ -469,7 +469,7 @@ DEFAULT_COUNTRY = Country("FJ", "Fiji")
 
 @tb.tool
 def country_information(country: Country = DEFAULT_COUNTRY):
-    return f"# Country Info\n\nCode: `{country.key}`\n\nName: {country.label}"
+    return f"# Country Info\n\nCode: `{country.name}`\n\nName: {country.value}"
 
 
 @tb.tool
