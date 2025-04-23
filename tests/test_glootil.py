@@ -1665,3 +1665,32 @@ def test_parse_type_annotation():
     assert r is True
     assert e == "Type union can only be with None"
     assert tp is str
+
+
+def test_optional_tool_arg_reflects_it_in_schema():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.tool
+    def ident(a: int | None, b: int, c: int | None = 10):
+        return a
+
+    t = tb.tools[0]
+    a, b, c = t.args
+
+    assert a.to_schema_info() == {
+        "description": None,
+        "type": ["integer", "null"],
+        "default": None,
+    }
+
+    assert b.to_schema_info() == {
+        "description": None,
+        "type": "integer",
+        "default": 0,
+    }
+
+    assert c.to_schema_info() == {
+        "description": None,
+        "type": ["integer", "null"],
+        "default": 10,
+    }

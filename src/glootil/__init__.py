@@ -155,6 +155,7 @@ class FnArg:
             raise ValueError(error)
 
         self.type = main_type if main_type is not object else None
+        self.is_required = is_required
         self._isinstance_type = isinstance_type
 
         self.default_value = default_value
@@ -187,8 +188,8 @@ class ToolArg(FnArg):
             desc = self.docs
 
         info = {
-            "type": type,
-            "default": default,
+            "type": type if self.is_required else [type, "null"],
+            "default": default if self.is_required else self.default_value,
             "description": desc,
         }
 
