@@ -859,7 +859,7 @@ class TagValue:
             if has_static_method(Class, "find_best_match"):
                 find_best_match_fn_info = FnInfo.from_function(Class.find_best_match)
             else:
-                find_best_match_fn_info = FnInfo.from_function(lambda: None)
+                find_best_match_fn_info = FnInfo.from_function(Class.search)
 
             def search_fn(info):
                 return search_fn_info.call_with_args(
