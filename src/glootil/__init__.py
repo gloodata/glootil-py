@@ -633,8 +633,11 @@ def normalize_match_result(v):
         return v
     elif is_valid_match_entry(v):
         return normalize_match_entry(v)
-    elif is_list(v) and len(v) > 0 and is_valid_match_entry(v[0]):
-        return normalize_match_entry(v[0])
+    elif is_list(v):
+        if len(v) == 0:
+            return None
+        elif is_valid_match_entry(v[0]):
+            return normalize_match_entry(v[0])
     elif is_dict(v):
         entry = v.get("entry")
         if is_valid_match_entry(entry):
