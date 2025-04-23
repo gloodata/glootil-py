@@ -783,7 +783,7 @@ class TagValue:
     async def match_handler(self, info):
         query = info.get("query")
         if not query:
-            return None
+            return {"entry": None}
         else:
             return await self.find_best_match(query)
 
