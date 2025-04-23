@@ -1211,7 +1211,11 @@ def test_match_result_to_response():
 
     assert f(("a", "A")) == {"entry": ("a", "A")}
     assert f(["a", "A"]) == {"entry": ("a", "A")}
+    assert f([["a", "A"]]) == {"entry": ("a", "A")}
+    assert f([["a", "A"], None]) == {"entry": ("a", "A")}
+    assert f([42]) == {"entry": None}
     assert f(dict(key="a", label="A")) == {"entry": ("a", "A")}
+    assert f([dict(key="a", label="A")]) == {"entry": ("a", "A")}
 
     assert f({"entry": ("a", "A")}) == {"entry": ("a", "A")}
     assert f({"entry": ["a", "A"]}) == {"entry": ("a", "A")}

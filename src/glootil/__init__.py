@@ -602,21 +602,27 @@ def normalize_match_entry(entry):
         raise ValueError("Invalid match entry format")
 
 
-def match_result_to_response(v):
+def normalize_match_result(v):
     if v is None:
-        return {"entry": v}
+        return v
     elif is_valid_match_entry(v):
-        return {"entry": normalize_match_entry(v)}
+        return normalize_match_entry(v)
+    elif is_list(v) and len(v) > 0 and is_valid_match_entry(v[0]):
+        return normalize_match_entry(v[0])
     elif is_dict(v):
         entry = v.get("entry")
         if is_valid_match_entry(entry):
-            return {"entry": normalize_match_entry(entry)}
+            return normalize_match_entry(entry)
 
     logger.warning(
         "bad enum match result format, expected 2 string item list or tuple or entry dict, got: %s",
         v,
     )
-    return {"entry": None}
+    return None
+
+
+def match_result_to_response(v):
+    return {"entry": normalize_match_result(v)}
 
 
 def extract_match_entry_key_and_label_or_none(m) -> tuple[str, str] | None:
