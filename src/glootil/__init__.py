@@ -9,7 +9,7 @@ from datetime import date
 from difflib import SequenceMatcher
 from enum import Enum
 
-from typing import BinaryIO
+from typing import BinaryIO, Any, Self
 
 import uvicorn
 
@@ -111,29 +111,51 @@ def date_to_data_tag(d):
     return ["dt", d] if d else None
 
 
+def parse_type_annotation(type_):
+    main_type = object
+    is_required = False
+    isinstance_type = object
+    error = None
+
+    if type_ is None:
+        pass
+    elif typing.get_origin(type_) is UnionType:
+        targs = typing.get_args(type_)
+        ta, tb, *_ = targs
+        is_required = True
+        if len(targs) == 2 and (ta is NoneType or tb is NoneType):
+            main_type = ta if tb is NoneType else tb
+            isinstance_type = targs
+            is_required = False
+        else:
+            main_type = ta
+            isinstance_type = main_type
+            error = "Type union can only be with None"
+    elif isinstance(type_, type):
+        main_type = type_
+        isinstance_type = main_type
+        is_required = True
+
+        if type_ is float:
+            isinstance_type = (int, float)
+    else:
+        error = "Invalid type"
+
+    return main_type, is_required, error, isinstance_type
+
+
 class FnArg:
     def __init__(self, name, index, type_, default_value):
         self.name = name
         self.index = index
-        if type_ and typing.get_origin(type_) is UnionType:
-            targs = typing.get_args(type_)
-            ta, tb = targs
-            if len(targs) == 2 and (ta is NoneType or tb is NoneType):
-                self.type = ta if tb is NoneType else tb
-                self._isinstance_type = targs
-            else:
-                raise ValueError("FnArg type Union can only be with None")
-        else:
-            # assert that it's a type
-            assert type_ is None or isinstance(type_, type)
-            self.type = type_
 
-            if type_ is None:
-                self._isinstance_type = object
-            elif type_ is float:
-                self._isinstance_type = (int, float)
-            else:
-                self._isinstance_type = type_
+        main_type, is_required, error, isinstance_type = parse_type_annotation(type_)
+
+        if error:
+            raise ValueError(error)
+
+        self.type = main_type if main_type is not object else None
+        self._isinstance_type = isinstance_type
 
         self.default_value = default_value
 
@@ -507,33 +529,36 @@ def to_list_of_pairs(seq):
     return list(to_seq_of_pairs(seq))
 
 
-class KeyValue:
-    def __repr__(self):
-        return f"KeyValue({self.name}, {self.key}, {self.value})"
+class KeyValueEnum(Enum):
+    key: Any
 
-    def __str__(self):
-        return self.key
-
-    def __eq__(self, other):
-        return (
-            isinstance(other, KeyValue)
-            and self.name == other.name
-            and self.value == other.value
-        )
-
-
-class KeyValueEnum(KeyValue, Enum):
-    def __new__(cls, key, value):
+    def __new__(cls, key, value) -> Self:
         obj = object.__new__(cls)
         obj._value_ = value
         obj.key = key
         return obj
+
+    def __repr__(self):
+        return f"KeyValueEnum({self.name}, {self.key}, {self.value})"
+
+    def __str__(self):
+        return str(self.key)
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, KeyValueEnum)
+            and self.name == other.name
+            and self.value == other.value
+        )
 
 
 class DynEnum:
     def __init__(self, name, value):
         self.name = name
         self.value = value
+
+    def to_data_tag(self):
+        return None
 
     @property
     def key(self):
@@ -1025,7 +1050,7 @@ class Variant:
 
     @classmethod
     def from_enum_variant(cls, variant):
-        if isinstance(variant, KeyValue):
+        if isinstance(variant, KeyValueEnum):
             name = variant.key
         else:
             name = variant.name
@@ -1041,6 +1066,10 @@ class EmptyState:
 
     def setup(self):
         "method called to setup the state before start serving"
+        pass
+
+    def dispose(self):
+        "method called to dispose the state before stopping"
         pass
 
 

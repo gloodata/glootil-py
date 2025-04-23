@@ -11,6 +11,7 @@ from glootil import (
     NoneType,
     KeyValueEnum,
     Variant,
+    parse_type_annotation,
     format_enum_data_tag,
     format_data_tag,
     make_enum_dict,
@@ -1611,3 +1612,56 @@ def test_dyn_enum_to_data_tag():
     RED = Color("RED", "Red")
 
     assert RED.to_data_tag() == format_data_tag(ns, "Color", "RED", "Red")
+
+
+def test_parse_type_annotation():
+    def fn(n, s: str, os: str | None, bu: str | int, bu1: str | int | bool): ...
+
+    anns = fn.__annotations__
+
+    # t: main type
+    # r: is required
+    # e: error
+    # tp: isinstance type (type predicate)
+    t, r, e, tp = parse_type_annotation(anns["s"])
+
+    assert t is str
+    assert r is True
+    assert e is None
+    assert tp is str
+
+    #
+
+    t, r, e, tp = parse_type_annotation(anns["os"])
+
+    assert t is str
+    assert r is False
+    assert e is None
+    assert tp == (str, NoneType)
+
+    #
+
+    t, r, e, tp = parse_type_annotation(anns.get("n"))
+
+    assert t is object
+    assert r is False
+    assert e is None
+    assert tp is object
+
+    #
+
+    t, r, e, tp = parse_type_annotation(anns["bu"])
+
+    assert t is str
+    assert r is True
+    assert e == "Type union can only be with None"
+    assert tp is str
+
+    #
+
+    t, r, e, tp = parse_type_annotation(anns["bu1"])
+
+    assert t is str
+    assert r is True
+    assert e == "Type union can only be with None"
+    assert tp is str
