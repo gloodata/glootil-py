@@ -781,8 +781,11 @@ class TagValue:
         return None
 
     async def match_handler(self, info):
-        query = info.get("query", "")
-        return await self.find_best_match(query)
+        query = info.get("query")
+        if not query:
+            return None
+        else:
+            return await self.find_best_match(query)
 
     async def load_handler(self, _info):
         entries = to_list_of_pairs(await self.get_variants())
@@ -1012,14 +1015,9 @@ class DynSearchTagValue(TagValue):
         return await maybe_await(self.search_fn(info))
 
     async def find_best_match(self, query):
-        r = await maybe_await(self.find_best_match_fn({"query": query}))
-        if is_list(r):
-            if len(r) > 0:
-                return r[0]
-            else:
-                return None
-        else:
-            return r
+        if not query:
+            return None
+        return await maybe_await(self.find_best_match_fn({"query": query, "limit": 1}))
 
     def get_handlers(self):
         return [
