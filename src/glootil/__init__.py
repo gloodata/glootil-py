@@ -177,19 +177,28 @@ class ToolArg(FnArg):
         self.label = label or name
 
     def __str__(self):
-        return f"{self.label}[{self.index}]: {self.type} = {self.default_value}"
+        opt = "" if self.is_required else "?"
+        return f"{self.label}[{self.index}]: {self.type}{opt} = {self.default_value}"
 
     def to_schema_info(self):
         type, default, format = type_to_schema_type(self.type, self.default_value)
 
-        if not self.docs and is_any_enum(self.type):
+        desc = self.docs
+        if not desc and is_any_enum_type(self.type):
             desc = self.type.__doc__
+
+        default_value = default
+
+        if is_any_enum_variant(self.default_value):
+            default_value = self.default_value.name
+        elif self.is_required:
+            default_value = default
         else:
-            desc = self.docs
+            default_value = self.default_value
 
         info = {
             "type": type if self.is_required else [type, "null"],
-            "default": default if self.is_required else self.default_value,
+            "default": default_value,
             "description": desc,
         }
 
@@ -216,15 +225,27 @@ class ToolArg(FnArg):
             self.docs = docs
 
 
-def is_any_enum(t):
+def is_any_enum_variant(v):
+    return isinstance(v, (Enum, DynEnum))
+
+
+def is_enum_variant(v):
+    return isinstance(v, Enum)
+
+
+def is_dyn_enum_variant(v):
+    return isinstance(v, DynEnum)
+
+
+def is_any_enum_type(t):
     return isinstance(t, type) and issubclass(t, (Enum, DynEnum))
 
 
-def is_enum(t):
+def is_enum_type(t):
     return isinstance(t, type) and issubclass(t, Enum)
 
 
-def is_dyn_enum(t):
+def is_dyn_enum_type(t):
     return isinstance(t, type) and issubclass(t, DynEnum)
 
 
@@ -274,7 +295,7 @@ def type_to_schema_type(t, default):
     elif t is date:
         return "string", default, "date"
     else:
-        if not is_any_enum(t):
+        if not is_any_enum_type(t):
             logger.warning("unknown type for schema %s, returning string", t)
         return "string", "", None
 
@@ -368,7 +389,7 @@ class Tool(FnInfo):
     def to_context_actions(self, toolbox):
         r = []
         for arg in self.args:
-            if is_any_enum(arg.type):
+            if is_any_enum_type(arg.type):
                 info = toolbox.get_context_action_for_tool_enum_arg(self, arg)
                 if info:
                     r.append(info)
@@ -1148,7 +1169,7 @@ class Toolbox:
             return _provide_arg_of_type(info, "info", ContextActionInfo)
         else:
             v = info.get(arg.name)
-            if is_any_enum(t):
+            if is_any_enum_type(t):
                 wrapper = self.enum_class_to_wrapper.get(t)
                 if wrapper:
                     # NOTE: This call is async and returns an awaitable
@@ -1247,9 +1268,9 @@ class Toolbox:
     def enum(self, *args, **kwargs):
         if len(args) == 1 and len(kwargs) == 0:
             arg = args[0]
-            if is_enum(arg):
+            if is_enum_type(arg):
                 self.add_enum(TagValue.from_enum_class(arg, {}))
-            elif is_dyn_enum(arg):
+            elif is_dyn_enum_type(arg):
                 self.add_enum(TagValue.from_dyn_enum_class(arg, {}, self))
             else:
                 raise TypeError(
@@ -1262,9 +1283,9 @@ class Toolbox:
         else:
 
             def wrapper(arg):
-                if is_enum(arg):
+                if is_enum_type(arg):
                     self.add_enum(TagValue.from_enum_class(arg, kwargs))
-                elif is_dyn_enum(arg):
+                elif is_dyn_enum_type(arg):
                     self.add_enum(TagValue.from_dyn_enum_class(arg, kwargs, self))
                 else:
                     raise TypeError(
