@@ -1445,7 +1445,9 @@ class Toolbox:
                 port = int(env_port)
             except ValueError:
                 log.warning(
-                    "invalid port value '%s' in env, using default: %s", env_port, default_port
+                    "invalid port value '%s' in env, using default: %s",
+                    env_port,
+                    default_port,
                 )
 
         return self.serve(host=host, port=port)
