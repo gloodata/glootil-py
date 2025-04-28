@@ -1,15 +1,17 @@
+import asyncio
+import base64
+import hashlib
+import random
 import sys
 import time
-import asyncio
-import random
 
 from datetime import date
 from enum import Enum
 
-sys.path.append("../src")
-
-from glootil import Toolbox, ResourceInfo, DynEnum, serve_static_file
 from fastapi import Request
+
+sys.path.append("../src")
+from glootil import DynEnum, ResourceInfo, Toolbox, serve_static_file
 
 
 class State:
@@ -612,6 +614,39 @@ def metric_to_imperial_distance_converter(
     result = round(result, 2)
 
     return f"{distance} {from_unit.value} is equal to {result} {to_unit.value}"
+
+
+@tb.enum(icon="calculator")
+class EncodeAlgorithm(Enum):
+    """the encoding algorithm to use"""
+
+    SHA256 = "SHA256"
+    SHA512 = "SHA512"
+    MD5 = "MD5"
+    BASE64 = "Base64"
+
+
+@tb.tool(
+    name="Hash Text",
+    args={"text": {"name": "Text", "multiline": True}, "algorithm": "Algorithm"},
+)
+def encode_text(
+    text: str = "Hello World", algorithm: EncodeAlgorithm = EncodeAlgorithm.SHA256
+):
+    if algorithm == EncodeAlgorithm.SHA256:
+        sha256_hash = hashlib.sha256(text.encode()).hexdigest()
+        return f"SHA256 Hash: `{sha256_hash}`"
+    if algorithm == EncodeAlgorithm.SHA512:
+        sha512_hash = hashlib.sha512(text.encode()).hexdigest()
+        return f"SHA512 Hash: `{sha512_hash}`"
+    elif algorithm == EncodeAlgorithm.MD5:
+        md5_hash = hashlib.md5(text.encode()).hexdigest()
+        return f"MD5 Hash: `{md5_hash}`"
+    elif algorithm == EncodeAlgorithm.BASE64:
+        base64_result = base64.b64encode(text.encode()).decode()
+        return f"Base64 Encoding: `{base64_result}`"
+    else:
+        return "Invalid algorithm"
 
 
 tb.serve_from_env_or(default_port=8088)

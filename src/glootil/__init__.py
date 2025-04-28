@@ -175,6 +175,7 @@ class ToolArg(FnArg):
         super().__init__(name, index, type, default_value)
         self.docs = None
         self.label = label or name
+        self.type_opts = {}
 
     def __str__(self):
         opt = "" if self.is_required else "?"
@@ -205,6 +206,9 @@ class ToolArg(FnArg):
         if format:
             info["format"] = format
 
+        if self.type_opts.get("multiline"):
+            info["multiline"] = True
+
         return info
 
     def to_ui_info(self, toolbox):
@@ -217,12 +221,21 @@ class ToolArg(FnArg):
     def apply_overrides(self, d):
         name = d.get("name")
         docs = d.get("docs")
+        multiline = d.get("multiline")
 
         if name:
             self.label = name
 
         if docs:
             self.docs = docs
+
+        if multiline:
+            if self.type is str:
+                self.type_opts["multiline"] = True
+            else:
+                log.warning(
+                    "multiline option is only available for str type, got %s", self.type
+                )
 
 
 def is_any_enum_variant(v):

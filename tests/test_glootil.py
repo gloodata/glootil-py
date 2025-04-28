@@ -1755,3 +1755,39 @@ async def test_dyn_enum_custom_find_best_match():
     assert await e.match_handler(dict(query="a")) == {"entry": ("a", "A")}
     assert await e.match_handler(dict(query="")) == {"entry": None}
     assert await e.match_handler(dict(query=None)) == {"entry": None}
+
+
+def test_multiline_string_field():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.tool(args={"a": {"multiline": True}, "b": {"multiline": True}})
+    def my_tool(a: str, b: int):
+        return a
+
+    t = tb.tools[0]
+    assert t.to_info(tb) == {
+        "title": "my_tool",
+        "description": None,
+        "schema": {
+            "fields": {
+                "a": {
+                    "type": "string",
+                    "default": "",
+                    "multiline": True,
+                    "description": None,
+                },
+                "b": {
+                    "type": "integer",
+                    "default": 0,
+                    "description": None,
+                },
+            }
+        },
+        "ui": {
+            "prefix": t.name,
+            "args": {"a": {"prefix": "a"}, "b": {"prefix": "b"}},
+            "manualUpdate": False,
+        },
+        "contextActions": [],
+        "examples": ["my_tool"],
+    }
