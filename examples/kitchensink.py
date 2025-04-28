@@ -523,4 +523,94 @@ def now_ms_ts():
     return time.time() * 1000
 
 
-tb.serve("127.0.0.1", 8088)
+@tb.enum(icon="thermometer")
+class TemperatureTransform(Enum):
+    """the temperature transformation to apply"""
+
+    CELSIUS_TO_FAHRENHEIT = "Celsius to Fahrenheit"
+    FAHRENHEIT_TO_CELSIUS = "Fahrenheit to Celsius"
+
+
+@tb.tool(
+    name="Temperature Converter",
+    examples=["Convert 100 Celsius to Fahrenheit", "Convert 212 Fahrenheit to Celsius"],
+    args={
+        "temperature": {"name": "Temperature", "docs": "The temperature to convert"},
+        "transform": {"name": "Transform"},
+    },
+)
+def temperature_converter(
+    temperature: float = 36.0,
+    transform: TemperatureTransform = TemperatureTransform.CELSIUS_TO_FAHRENHEIT,
+):
+    if transform == TemperatureTransform.CELSIUS_TO_FAHRENHEIT:
+        result = round((temperature * 9 / 5) + 32, 2)
+        return f"{temperature}°C is equal to {result}°F"
+    elif transform == TemperatureTransform.FAHRENHEIT_TO_CELSIUS:
+        result = round((temperature - 32) * 5 / 9, 2)
+        return f"{temperature}°F is equal to {result}°C"
+    else:
+        return "Invalid transformation type"
+
+
+@tb.enum(icon="unit")
+class MetricDistanceUnits(Enum):
+    """the metric distance unit to use"""
+
+    KILOMETERS = "Kilometers"
+    METERS = "Meters"
+    CENTIMETERS = "Centimeters"
+    MILLIMETERS = "Millimeters"
+
+
+@tb.enum(icon="unit")
+class ImperialDistanceUnits(Enum):
+    """the imperial distance unit to use"""
+
+    MILES = "Miles"
+    YARDS = "Yards"
+    FEET = "Feet"
+    INCHES = "Inches"
+
+
+@tb.tool(
+    name="Metric to Imperial Distance Converter",
+    examples=["Convert 100 kilometers to miles", "Convert 50 centimeters to inches"],
+    args={
+        "distance": {"name": "Distance", "docs": "The distance to convert"},
+        "from_unit": {"name": "From Unit"},
+        "to_unit": {"name": "To Unit"},
+    },
+)
+def metric_to_imperial_distance_converter(
+    distance: float = 1.0,
+    from_unit: MetricDistanceUnits = MetricDistanceUnits.KILOMETERS,
+    to_unit: ImperialDistanceUnits = ImperialDistanceUnits.MILES,
+):
+    distance_in_mm = distance
+    if from_unit == MetricDistanceUnits.KILOMETERS:
+        distance_in_mm *= 1_000_000
+    elif from_unit == MetricDistanceUnits.METERS:
+        distance_in_mm *= 1_000
+    elif from_unit == MetricDistanceUnits.CENTIMETERS:
+        distance_in_mm *= 10
+    elif from_unit == MetricDistanceUnits.MILLIMETERS:
+        pass
+
+    result = distance_in_mm
+    # TODO: check this numbers :)
+    if to_unit == ImperialDistanceUnits.MILES:
+        result /= 1_609_344
+    elif to_unit == ImperialDistanceUnits.YARDS:
+        result /= 914.4
+    elif to_unit == ImperialDistanceUnits.FEET:
+        result /= 304.8
+    elif to_unit == ImperialDistanceUnits.INCHES:
+        result /= 25.4
+
+    result = round(result, 2)
+
+    return f"{distance} {from_unit.value} is equal to {result} {to_unit.value}"
+
+
+tb.serve_from_env_or(default_port=8088)

@@ -23,7 +23,7 @@ from fastapi.responses import (
 )
 
 
-logger = logging.getLogger("glootil")
+log = logging.getLogger("glootil")
 
 UnionType = type(str | None)
 NoneType = type(None)
@@ -79,7 +79,7 @@ def cast_date_default(v):
     if is_date(v):
         return v
     else:
-        logger.warning("Invalid default date format: %s", v)
+        log.warning("Invalid default date format: %s", v)
         return None
 
 
@@ -91,7 +91,7 @@ def try_cast_or(v, cast_fn, default, default_caster=identity):
     try:
         return cast_fn(v)
     except Exception as err:
-        logger.warning("couldn't cast returning default: %s", err)
+        log.warning("couldn't cast returning default: %s", err)
         return default_caster(default)
 
 
@@ -101,7 +101,7 @@ def cast_json_type_to_fn_arg_type_or_default(v, target_type, default):
     if caster:
         return caster(v, default)
     else:
-        logger.warning(
+        log.warning(
             "no caster found from %s to %s, returning default", v_type, target_type
         )
         return default
@@ -296,7 +296,7 @@ def type_to_schema_type(t, default):
         return "string", default, "date"
     else:
         if not is_any_enum_type(t):
-            logger.warning("unknown type for schema %s, returning string", t)
+            log.warning("unknown type for schema %s, returning string", t)
         return "string", "", None
 
 
@@ -499,12 +499,12 @@ def apply_arg_override(args_by_name, name, info):
         elif is_str(info):
             arg.apply_overrides({"name": info})
         else:
-            logger.warning(
+            log.warning(
                 "bad tool argument info format for argument '%s': %s", name, info
             )
 
     else:
-        logger.warning("tool argument info for inexistent argument name '%s'", name)
+        log.warning("tool argument info for inexistent argument name '%s'", name)
 
 
 def basic_match_raw_tag_value(word, possibilities):
@@ -584,12 +584,12 @@ class DynEnum:
 
     @property
     def key(self):
-        logger.warning("accessing deprecated property key in %s", repr(self))
+        log.warning("accessing deprecated property key in %s", repr(self))
         return self.name
 
     @property
     def label(self):
-        logger.warning("accessing deprecated property label in %s", repr(self))
+        log.warning("accessing deprecated property label in %s", repr(self))
         return self.value
 
     def __repr__(self):
@@ -664,7 +664,7 @@ def normalize_match_result(v):
         if is_valid_match_entry(entry):
             return normalize_match_entry(entry)
 
-    logger.warning(
+    log.warning(
         "bad enum match result format, expected 2 string item list or tuple or entry dict, got: %s",
         v,
     )
@@ -753,7 +753,7 @@ def search_result_to_response(v):
         if isinstance(entries, list):
             return {"entries": normalize_search_result_entries(entries)}
 
-    logger.warning(
+    log.warning(
         "bad enum search result format, expected list or entries dict, got: %s", v
     )
     return {"entries": []}
@@ -782,7 +782,7 @@ class TagValue:
         }
 
     def from_key_and_label(self, key, label):
-        logger.warning("TagValue from key and value not implemented: %s %s", key, label)
+        log.warning("TagValue from key and value not implemented: %s %s", key, label)
         return None
 
     async def from_raw_arg_value(self, v):
@@ -797,7 +797,7 @@ class TagValue:
             key, label = t
             return self.from_key_and_label(key, label)
         elif t is not None:
-            logger.warning("bad TagValue result format, got: %s", v)
+            log.warning("bad TagValue result format, got: %s", v)
 
         return None
 
@@ -1029,7 +1029,7 @@ class DynSearchTagValue(TagValue):
         return f"enum::{self.id}::search"
 
     async def get_variants(self):
-        logger.warning("calling get_variants in DynSearchTagValue")
+        log.warning("calling get_variants in DynSearchTagValue")
         return []
 
     async def load_handler(self, info):
@@ -1137,7 +1137,7 @@ class Toolbox:
 
             return {"target": {"name": tv.id}, "handler": cah.handler_id}
         else:
-            logger.warning(
+            log.warning(
                 "tool arg type not registered, forgot decorator? tool: %s, arg: %s",
                 tool,
                 arg,
@@ -1177,7 +1177,7 @@ class Toolbox:
                     r = wrapper.from_raw_arg_value(v)
                     return r if r is not None else arg.default_value
                 else:
-                    logger.warning("enum class argument type not annotated? %s", arg)
+                    log.warning("enum class argument type not annotated? %s", arg)
                     return arg.default_value
             else:
                 return arg.cast_json_value_or_default(v)
@@ -1205,7 +1205,7 @@ class Toolbox:
 
     def add_handler(self, id, handler):
         if id in self.handlers:
-            logger.warning("duplicated handler for id '%s'", id)
+            log.warning("duplicated handler for id '%s'", id)
 
         self.handlers[id] = handler
 
@@ -1235,7 +1235,7 @@ class Toolbox:
 
     def add_resource_handler_for_type(self, v, for_type):
         if for_type in self.resource_handlers:
-            logger.warning("overriding resource handler for type: %s", for_type)
+            log.warning("overriding resource handler for type: %s", for_type)
 
         self.resource_handlers[for_type] = v
 
@@ -1254,7 +1254,7 @@ class Toolbox:
             self.context_actions_by_type_and_tool[type] = by_type
 
         if tool in by_type:
-            logger.warning(
+            log.warning(
                 "overriding context action handler for tool %s and type %s", tool, type
             )
 
@@ -1387,7 +1387,7 @@ class Toolbox:
     def handle_action_request(self, op_name, req_info):
         handler = self.handlers.get(op_name)
         if handler:
-            logger.info("handle action request: %s %s", op_name, req_info)
+            log.info("handle action request: %s %s", op_name, req_info)
             return handler(req_info)
         else:
             return res_error("ToolNotFound", "Tool Not Found", {"opName": op_name})
@@ -1431,10 +1431,24 @@ class Toolbox:
 
         return app
 
-    def serve(self, host="127.0.0.1", port=8086):
+    def serve(self, host="localhost", port=8086):
         app = self.to_fastapi_app()
-
         return uvicorn.run(app, host=host, port=port)
+
+    def serve_from_env_or(self, default_host="localhost", default_port=8086):
+        host = os.environ.get("EXTENSION_HOST", default_host)
+        port = default_port
+
+        env_port = os.environ.get("EXTENSION_PORT")
+        if env_port is not None:
+            try:
+                port = int(env_port)
+            except ValueError:
+                log.warning(
+                    "invalid port value '%s' in env, using default: %s", env_port, default_port
+                )
+
+        return self.serve(host=host, port=port)
 
 
 def _provide_arg_of_type(info, key, Class):
@@ -1442,7 +1456,7 @@ def _provide_arg_of_type(info, key, Class):
     if isinstance(v, Class):
         return v
     elif v is not None:
-        logger.warning(
+        log.warning(
             "requested %s arg but got another type %s, %s",
             Class,
             v,
@@ -1534,6 +1548,6 @@ def handler_response_to_fastapi_response(res, jsonable_encoder, JSONResponse):
     try:
         return JSONResponse(content=jsonable_encoder(res), status_code=200)
     except Exception as err:
-        logger.warning("Error encoding response: %s (%s)", err, res)
+        log.warning("Error encoding response: %s (%s)", err, res)
         err_res = res_error("InternalError", "Internal Error", {})
         return JSONResponse(content=jsonable_encoder(err_res), status_code=500)
