@@ -505,15 +505,16 @@ def date_diff(a: date, b: date, unit: DateDiffUnit = DateDiffUnit.DAYS):
     b = b if b else date.today()
     a = a if a else b or date.today()
 
+    in_days = (b - a).days
+
     if unit == DateDiffUnit.WEEKS:
-        d = (b - a).days / 7
+        d = in_days / 7
     elif unit == DateDiffUnit.MONTHS:
-        d = (b - a).days / 30
+        d = in_days / 30
     elif unit == DateDiffUnit.YEARS:
-        d = (b - a).days / 365
+        d = in_days / 365
     else:
-        unit = DateDiffUnit.DAYS
-        d = (b - a).days
+        d = in_days
 
     d = int(d)
     return f"Difference between {a} and {b}: {d} {unit.value}"
