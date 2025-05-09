@@ -810,6 +810,31 @@ async def test_dyn_enum_match_handler():
     assert match_result == ("ADD", "add")
 
 
+@pytest.mark.asyncio
+async def test_dyn_enum_load_returns_dicts():
+    tb = Toolbox("mytools", "My Tools", "some tools")
+
+    @tb.enum
+    class Operation(DynEnum):
+        @staticmethod
+        def load():
+            return [
+                dict(id="ADD", name="add"),
+                dict(key="SUB", label="sub"),
+                dict(id="MUL", title="mul"),
+                dict(key="DIV", name="div"),
+            ]
+
+    e = tb.enums[0]
+
+    assert await e.get_variants() == [
+        ("ADD", "add"),
+        ("SUB", "sub"),
+        ("MUL", "mul"),
+        ("DIV", "div"),
+    ]
+
+
 def test_cast_json_from_int():
     assert cast_json(10, int, 0) == 10
     assert cast_json(10, float, 0.0) == 10.0

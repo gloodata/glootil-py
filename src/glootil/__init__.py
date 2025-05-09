@@ -999,7 +999,8 @@ class DynTagValue(TagValue):
         if self._cached_variants:
             return self._cached_variants
 
-        variants = await maybe_await(await self.load_fn())
+        raw_variants = await maybe_await(await self.load_fn())
+        variants = normalize_search_result_entries(raw_variants)
 
         if self.cache:
             self._cached_variants = variants
