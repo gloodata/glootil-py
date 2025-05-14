@@ -801,6 +801,10 @@ class TagValue:
     async def from_raw_arg_value(self, v):
         t = None
         if is_str(v):
+            # NOTE: empty string doesn't match any value
+            if not v:
+                return None
+
             m = await self.find_best_match(v)
             t = extract_match_entry_key_and_label_or_none(m)
         elif is_dict(v):

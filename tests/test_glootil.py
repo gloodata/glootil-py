@@ -421,8 +421,13 @@ async def test_enum_class_default_matcher():
 
     e = tb.enums[0]
 
+    # always returns best match
+    assert await e.find_best_match("") == ("ADD", "add")
     assert await e.find_best_match("ad") == ("ADD", "add")
     assert await e.find_best_match("mu") == ("MUL", "mul")
+
+    assert await e.from_raw_arg_value("") is None
+    assert await e.from_raw_arg_value(None) is None
 
 
 @pytest.mark.asyncio
@@ -1537,6 +1542,8 @@ async def test_key_value_enum():
     assert await e.from_raw_arg_value("*") == Op.MUL
     assert await e.from_raw_arg_value("/") == Op.DIV
     assert await e.from_raw_arg_value("!") == Op.ADD
+    assert await e.from_raw_arg_value("") is None
+    assert await e.from_raw_arg_value(None) is None
 
 
 @pytest.mark.asyncio
