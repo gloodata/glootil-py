@@ -26,7 +26,7 @@ tb = Toolbox(
 )
 
 
-@tb.tool
+@tb.tool(name="Sample Raw Markdown")
 def sample_raw_markdown():
     return "# Hello\n *this* **is** markdown\n\n- one\n- two"
 
@@ -58,12 +58,12 @@ DIAGRAM = """sequenceDiagram
 """
 
 
-@tb.tool
+@tb.tool(name="Sample Mermaid Diagram")
 def sample_mermaid_diagram():
     return {"type": "Mermaid", "text": DIAGRAM}
 
 
-@tb.tool
+@tb.tool(name="Sample InfoBox")
 def sample_infobox():
     return {
         "type": "InfoBox",
@@ -92,7 +92,7 @@ def sample_infobox():
     }
 
 
-@tb.tool
+@tb.tool(name="Sample Table")
 def sample_table():
     return {
         "type": "Table",
@@ -140,7 +140,7 @@ def sample_table():
     }
 
 
-@tb.tool
+@tb.tool(name="Sample Google Map")
 def sample_google_map():
     return {
         "type": "GoogleMap",
@@ -303,7 +303,7 @@ def sample_google_map():
     }
 
 
-@tb.tool
+@tb.tool(name="Sample Population Pyramid")
 def sample_population_pyramid():
     return {
         "type": "PopulationPyramid",
@@ -322,7 +322,7 @@ def sample_population_pyramid():
     }
 
 
-@tb.tool
+@tb.tool(name="Sample Area Map")
 def sample_area_map():
     return {
         "type": "AreaMap",
@@ -367,7 +367,7 @@ async def search_handler(query: str = ""):
 SEARCH_HANDLER_ID = tb.handler_id_for_task(search_handler)
 
 
-@tb.tool
+@tb.tool(name="Sample Search")
 def sample_search():
     return {
         "type": "Search",
@@ -380,7 +380,7 @@ def sample_search():
 SAMPLE_DOCUMENT_RESOURCE_TYPE = "sample-doc"
 
 
-@tb.tool
+@tb.tool(name="Show Sample Document")
 def show_sample_document():
     return {
         "type": "Pdf",
@@ -402,7 +402,7 @@ def code_resource(state: State, request: Request, resource: ResourceInfo):
         return None
 
 
-@tb.enum
+@tb.enum(icon="calculator")
 class Op(Enum):
     "the operation to apply"
 
@@ -412,7 +412,7 @@ class Op(Enum):
     DIV = "div"
 
 
-@tb.tool
+@tb.tool(name="Calculate")
 def calculate(a: float = 0, op: Op = Op.ADD, b: float = 0):
     r = 0
     match op:
@@ -440,7 +440,7 @@ def calculate_context_action():
     ]
 
 
-@tb.enum
+@tb.enum(icon="flag")
 class Country(DynEnum):
     @staticmethod
     def load():
@@ -469,18 +469,18 @@ class Country(DynEnum):
 DEFAULT_COUNTRY = Country("FJ", "Fiji")
 
 
-@tb.tool
+@tb.tool(name="Country Information")
 def country_information(country: Country = DEFAULT_COUNTRY):
     return f"# Country Info\n\nCode: `{country.name}`\n\nName: {country.value}"
 
 
-@tb.tool
+@tb.tool(name="Show Date")
 def show_date(d: date):
     d = d if d else date.today()
     return f"Date: {d}"
 
 
-@tb.enum
+@tb.enum(icon="unit")
 class DateDiffUnit(Enum):
     DAYS = "Days"
     WEEKS = "Weeks"
