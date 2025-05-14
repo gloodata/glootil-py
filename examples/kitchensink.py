@@ -630,9 +630,11 @@ class EncodeAlgorithm(Enum):
     name="Hash Text",
     args={"text": {"name": "Text", "multiline": True}, "algorithm": "Algorithm"},
 )
-def encode_text(
-    text: str = "Hello World", algorithm: EncodeAlgorithm = EncodeAlgorithm.SHA256
-):
+def encode_text(algorithm: EncodeAlgorithm | None, text: str = "Hello World"):
+    # test optional Enum
+    if algorithm is None:
+        algorithm = EncodeAlgorithm.SHA256
+
     if algorithm == EncodeAlgorithm.SHA256:
         sha256_hash = hashlib.sha256(text.encode()).hexdigest()
         return f"SHA256 Hash: `{sha256_hash}`"
